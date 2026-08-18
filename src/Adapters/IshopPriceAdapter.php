@@ -110,6 +110,47 @@ final class IshopPriceAdapter
     }
 
     /**
+     * **Alle** Artikelbezeichnungen in einer Anfrage.
+     *
+     * Derselbe Weg wie bei den Artikelnummern: `import:E0074 EXISTS` liefert die Items,
+     * und die Ergebnistabelle führt den Wert des gesuchten Attributs als eigene Spalte.
+     * Gemessen am 18.08.2026: **29.316 Bezeichnungen in 2,9 s und 7,2 MB.**
+     *
+     * Einzeln abgerufen wären das 0,27 s und 389 KB je Artikel — für eine Liste mit
+     * hundert Zeilen unbrauchbar, für den ganzen Bestand undenkbar. Deshalb wird der
+     * Name einmal je Lauf gesammelt und nicht bei jeder Anzeige geholt.
+     *
+     * Rund 6.000 Artikel führen kein E0074 und tauchen hier nicht auf — die bleiben ohne
+     * Bezeichnung, was ehrlicher ist als ein erfundener Platzhalter.
+     *
+     * @return array<string,string> Artikelnummer => Bezeichnung
+     */
+    public function namen(): array
+    {
+        $html = $this->http->get('/admin/os/overview', [
+            'searchType' => 'search_attr',
+            'searchEntries[0].negate' => 'POS',
+            'searchEntries[0].name'   => 'import:E0074',
+            'searchEntries[0].comp'   => 'EXISTS',
+            'searchEntries[0].value'  => '',
+            'onlyValid' => 'true',
+        ], [], 300)['body'];
+
+        \preg_match_all(
+            '~Item%23(\d+)"[^>]*>.*?</a>\s*</td>\s*<td[^>]*>.*?</td>\s*<td[^>]*>(.*?)</td>~s',
+            $html, $m);
+
+        $out = [];
+        foreach ($m[1] as $i => $sku) {
+            $name = $this->saubererName(\strip_tags($m[2][$i] ?? ''));
+            if ($name !== null) {
+                $out[(string) $sku] = $name;
+            }
+        }
+        return $out;
+    }
+
+    /**
      * Bezeichnung eines Artikels — `import:E0074` am Item-Objekt.
      *
      * Bewusst getrennt vom Preisabruf und nur bei Bedarf: Der Name ist Anzeigehilfe,
@@ -126,13 +167,24 @@ final class IshopPriceAdapter
         }
         \preg_match_all('/<td[^>]*>(.*?)<\/td>/s', $m[1], $z);
         $roh = \trim(\strip_tags(\end($z[1]) ?: ''));
-        $roh = \trim(\preg_replace('/^.*\|\s*/', '', $roh) ?? '');
-        // Interne Anhaengsel des Object Storage entfernen — `Maindata Reference:A15768275`
-        // ist eine Verwaltungsnummer und hat auf einem Nachweisdokument nichts verloren.
-        $roh = \preg_replace('/\\s*Maindata Reference:\\S*/', '', $roh) ?? $roh;
-        $roh = \preg_replace('/\\s*\\[value=.*?\\]/', '', $roh) ?? $roh;
-        $roh = \trim(\preg_replace('/\s+/', ' ', $roh) ?? '', " ,;\t\n");
-        return $roh !== '' ? \mb_substr($roh, 0, 255) : null;
+        return $this->saubererName($roh);
+    }
+
+    /**
+     * Bezeichnung von internen Anhängseln befreien.
+     *
+     * `Maindata Reference:A15768275` ist eine Verwaltungsnummer und hat auf einem
+     * Nachweisdokument nichts verloren; der abschließende Beistrich („Erdbohrgerät
+     * Vertex G250, EUROII,") stammt aus dem Import. Einzel- und Sammelabruf putzen über
+     * dieselbe Methode — sonst sähe derselbe Artikel je nach Weg anders aus.
+     */
+    private function saubererName(string $roh): ?string
+    {
+        $t = \trim(\preg_replace('/^.*\\|\\s*/', '', $roh) ?? '');
+        $t = \preg_replace('/\\s*Maindata Reference:\\S*/', '', $t) ?? $t;
+        $t = \preg_replace('/\\s*\\[value=.*?\\]/', '', $t) ?? $t;
+        $t = \trim(\preg_replace('/\\s+/', ' ', $t) ?? '', " ,;\t\n");
+        return $t !== '' ? \mb_substr($t, 0, 255) : null;
     }
 
     /**

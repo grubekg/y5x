@@ -50,6 +50,33 @@ final class Run
         $skus = $this->shop->skus($limit);
         $this->melden(\sprintf('%d Artikelnummern aus dem Object Storage', \count($skus)), $ausfuehrlich);
 
+        // Bezeichnungen einmal je Lauf in einer Anfrage (2,9 s fuer 29.316) statt bei
+        // jeder Anzeige einzeln. Sie sind Anzeigehilfe, keine Beweisgrundlage — schlaegt
+        // der Abruf fehl, laeuft der Lauf ohne sie weiter.
+        try {
+            $namen = $this->shop->namen();
+            $gesetzt = 0;
+            foreach (\array_chunk($skus, 500) as $block) {
+                $werte = [];
+                $args = [];
+                foreach ($block as $sku) {
+                    if (!isset($namen[$sku])) { continue; }
+                    $werte[] = '(?,?,?,NOW())';
+                    $args[] = $sku; $args[] = $markt; $args[] = $namen[$sku];
+                    $gesetzt++;
+                }
+                if ($werte !== []) {
+                    $this->db->execute(
+                        'INSERT INTO {p}article_meta (sku, market, name, fetched_at) VALUES '
+                        . \implode(',', $werte)
+                        . ' ON DUPLICATE KEY UPDATE name = VALUES(name), fetched_at = NOW()', $args);
+                }
+            }
+            $this->melden(\sprintf('%d Bezeichnungen übernommen', $gesetzt), $ausfuehrlich);
+        } catch (\Throwable $e) {
+            $this->melden('Bezeichnungen nicht abrufbar: ' . $e->getMessage(), $ausfuehrlich);
+        }
+
         $journal = new EventJournal();
         $fenster = new PriceWindow((int) ($this->app['window_days'] ?? 30));
         $rechner = new ReferenceCalculator(

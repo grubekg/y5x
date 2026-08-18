@@ -22,7 +22,7 @@ final class Http
     }
 
     /** @return array{status:int, body:string} */
-    public function get(string $pfad, array $query = [], array $header = []): array
+    public function get(string $pfad, array $query = [], array $header = [], ?int $timeout = null): array
     {
         $url = \rtrim($this->base, '/') . $pfad;
         if ($query !== []) {
@@ -31,7 +31,7 @@ final class Http
         $ch = \curl_init($url);
         \curl_setopt_array($ch, [
             \CURLOPT_RETURNTRANSFER => true,
-            \CURLOPT_TIMEOUT        => $this->timeout,
+            \CURLOPT_TIMEOUT        => $timeout ?? $this->timeout,
             \CURLOPT_HTTPHEADER     => \array_merge(['Accept: application/json'], $header),
             \CURLOPT_FOLLOWLOCATION => false,
         ]);

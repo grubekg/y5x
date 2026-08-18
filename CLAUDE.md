@@ -310,6 +310,25 @@ Der Trockenmodus steht als Chip permanent im Kopf, und alle Schreibzahlen tragen
 Die Kachel „Mit Referenz im PSS" zeigt im Trockenmodus **0**, nicht einen alten Stand:
 Eine veraltete Zahl, die aussieht wie eine aktuelle, ist schlimmer als keine.
 
+### Bezeichnungen: eine Anfrage für den ganzen Bestand
+
+Die Artikelliste zeigt zwischen Artikelnummer und „seit … unverändert" die
+**Bezeichnung** — und die Suche greift auf beides, denn wer einen Artikel im Kopf hat,
+hat selten die Nummer parat.
+
+Das ging nur über denselben Kniff wie bei den Artikelnummern: `import:E0074 EXISTS`
+liefert **29.316 Bezeichnungen in 1,9 s** in einer einzigen Anfrage, weil die
+Ergebnistabelle den Wert des gesuchten Attributs als eigene Spalte führt. Einzeln
+abgerufen wären das 0,27 s und 389 KB je Artikel — für eine Liste mit hundert Zeilen
+unbrauchbar. Gesammelt wird deshalb **einmal je Lauf**, nicht bei jeder Anzeige.
+
+Rund 6.000 der 35.641 Artikel führen kein `E0074` und bleiben ohne Bezeichnung. Das ist
+ehrlicher als ein erfundener Platzhalter. Einzel- und Sammelabruf putzen über dieselbe
+Methode (`saubererName`) — sonst sähe derselbe Artikel je nach Weg anders aus.
+
+Der Name ist **Anzeigehilfe, keine Beweisgrundlage**: Er steht in `article_meta` mit
+Abrufzeitpunkt, `price_events` bleibt unberührt.
+
 ### Die Artikelliste umfasst ALLE Artikel
 
 **Vorgabe GRUBE, 18.08.2026.** Der vorherige Stand listete nur laufende Aktionen — an

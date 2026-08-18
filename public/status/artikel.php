@@ -51,8 +51,8 @@ seitenkopf($sku !== '' ? "Nachweis $sku" : 'Artikel & Nachweis', 'artikel');
      bleibt der Knopf sichtbar — die Seite funktioniert in jedem Fall. -->
 <form class="suche" method="get">
   <span><label for="f-q">Artikel suchen</label>
-    <input id="f-q" name="q" value="<?= h($suche) ?>" placeholder="Artikelnummer"
-           class="mono" size="16" inputmode="numeric"></span>
+    <input id="f-q" name="q" value="<?= h($suche) ?>"
+           class="mono" size="18" placeholder="Nummer oder Bezeichnung"></span>
   <span><label for="f-markt">Markt</label>
     <select id="f-markt" name="markt" onchange="this.form.submit()"><?php foreach (maerkte() as $c => $m):
         if (!($m['active'] ?? false)) { continue; } ?>
@@ -96,23 +96,31 @@ if ($sku === ''):
         case 'risiko':          $wo[] = "s.mode = 'promo' AND s.window_complete = 0"; break;
         case 'unvollstaendig':  $wo[] = 's.window_complete = 0'; break;
     }
-    if ($suche !== '') { $wo[] = 's.sku LIKE ?'; $args[] = $suche . '%'; }
+    // Gesucht wird nach Artikelnummer ODER Bezeichnung — wer den Artikel im Kopf hat,
+    // hat selten die Nummer parat.
+    if ($suche !== '') {
+        $wo[] = '(s.sku LIKE ? OR a.name LIKE ?)';
+        $args[] = $suche . '%';
+        $args[] = '%' . $suche . '%';
+    }
 
     $von = 'FROM {p}price_state s
+        LEFT JOIN {p}article_meta a ON a.sku = s.sku AND a.market = s.market
         LEFT JOIN {p}price_events e ON e.sku = s.sku AND e.market = s.market
              AND e.valid_from = (SELECT MAX(valid_from) FROM {p}price_events
                                  WHERE sku = s.sku AND market = s.market)
         WHERE ' . \implode(' AND ', $wo);
 
-    $gesamt  = (int) (db()->one('SELECT COUNT(*) AS n FROM {p}price_state s WHERE '
-                . \implode(' AND ', \array_map(
-                    static fn($x) => \str_replace('s.sku LIKE ?', 's.sku LIKE ?', $x), $wo)), $args)['n'] ?? 0);
+    $gesamt = (int) (db()->one('SELECT COUNT(*) AS n FROM {p}price_state s
+        LEFT JOIN {p}article_meta a ON a.sku = s.sku AND a.market = s.market
+        WHERE ' . \implode(' AND ', $wo), $args)['n'] ?? 0);
     $proSeite = 100;
     $seiten = \max(1, (int) \ceil($gesamt / $proSeite));
     $seite  = \min($seiten, \max(1, (int) ($_GET['seite'] ?? 1)));
 
     $zeilen = db()->query(
-        'SELECT s.*, e.gross AS vk_gross, e.net AS vk_net, e.currency, e.valid_from AS vk_seit '
+        'SELECT s.*, a.name AS bezeichnung, e.gross AS vk_gross, e.net AS vk_net,
+                e.currency, e.valid_from AS vk_seit '
         . $von . ' ORDER BY s.mode DESC, s.window_complete ASC, s.sku
           LIMIT ' . $proSeite . ' OFFSET ' . (($seite - 1) * $proSeite), $args);
 ?>
@@ -137,6 +145,9 @@ if ($sku === ''):
   <td class="mono">
       <a href="?sku=<?= \urlencode($r['sku']) ?>&amp;markt=<?= h($markt) ?>"
          class="zeilenlink"><b><?= h($r['sku']) ?></b></a>
+      <?php if (($r['bezeichnung'] ?? null) !== null): ?>
+      <span class="sub bezeichnung"><?= h($r['bezeichnung']) ?></span>
+      <?php endif; ?>
       <span class="sub">seit <?= datum($r['vk_seit']) ?> unverändert</span></td>
   <td><?php if ($inAktion): ?>
         <span class="status aktion">Aktion</span>

@@ -93,6 +93,9 @@ thead th{border-top:0;background:#fafaf6;font-size:.72rem;letter-spacing:.07em;
 td.zahl,th.zahl{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}
 tbody tr:hover{background:#fbfbf7}
 td .sub{display:block;color:var(--neutral);font-size:.78rem;font-family:system-ui;letter-spacing:0}
+/* Die Bezeichnung steht in derselben Groesse wie die Zeile darunter, aber etwas
+   dunkler — sie ist die Information, „seit … unveraendert" nur die Fussnote dazu. */
+td .sub.bezeichnung{color:var(--tinte);max-width:26rem}
 tr.offen td{background:#fbfdf9}
 
 /* Ganze Zeile anklickbar — ohne JavaScript und ohne die Tastaturbedienung zu verlieren:
