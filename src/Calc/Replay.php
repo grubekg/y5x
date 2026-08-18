@@ -28,14 +28,12 @@ final class Replay
     /**
      * Zustand und Referenz, wie sie am Stichtag galten.
      *
-     * @param PriceEvent[] $events    gesamte bekannte Historie
-     * @param array<string,bool> $promoFlags  optional: Aktionskennzeichen je Tag (Y-m-d)
+     * @param PriceEvent[] $events gesamte bekannte Historie
      */
     public function until(
         array $events,
         \DateTimeImmutable $stichtag,
         string $currency = 'EUR',
-        array $promoFlags = [],
     ): ?Reference {
         $start = null;
         foreach ($events as $e) {
@@ -55,8 +53,7 @@ final class Replay
             // Wissen aus der Zukunft und der Nachweis wäre wertlos.
             $bekannt = \array_values(\array_filter($events,
                 static fn(PriceEvent $e): bool => $e->validFrom <= $tag));
-            $ref = $this->calc->calculate($bekannt, $state, $tag, $currency,
-                $promoFlags[$tag->format('Y-m-d')] ?? null);
+            $ref = $this->calc->calculate($bekannt, $state, $tag, $currency);
             $state = $ref->state;
         }
         return $ref;

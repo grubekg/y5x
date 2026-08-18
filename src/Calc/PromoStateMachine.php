@@ -17,11 +17,24 @@ use Grube\Price30\Support\Money;
  * einer laufenden Aktion weiter gesenkt, bleibt der ursprüngliche Referenzpreis
  * maßgeblich. Genau deshalb ändern weitere Senkungen im Zustand `promo` nichts.
  *
- * **Ein Promo-Kennzeichen des Shops schlägt jede Heuristik.** Liefert die iSHOP-Abfrage
- * ein Aktionsmerkmal, wird ausschließlich danach umgeschaltet — eine Preissenkung ist
- * nicht zwingend eine beworbene Ermäßigung, und eine Ermäßigung nicht zwingend eine
- * Senkung gegenüber gestern. Die Sprung-Heuristik ist der Rückfall, solange das
- * Kennzeichen nicht geklärt ist (TODO(setup) 1).
+ * **Es gibt kein Aktionskennzeichen, und es soll auch keines geben** (Entscheidung
+ * GRUBE, 18.08.2026). Aktionen können aus verschiedenen Stellen stammen; ein Kennzeichen
+ * aus nur einer davon wäre **schlimmer als gar keines**: Der Automat würde ihm
+ * ausschließlich glauben und jede Aktion aus einer anderen Quelle stillschweigend
+ * übersehen. Ein Kennzeichen, das „nein" sagt, obwohl eine Aktion läuft, erzeugt genau
+ * die falsche Werbeaussage, die dieses Werkzeug verhindern soll.
+ *
+ * Deshalb nimmt dieser Automat **bewusst keinen Flag-Parameter entgegen**. Das einzige
+ * verlässliche Signal ist der tatsächlich angewendete Preis aus dem Shop — er ist die
+ * Vereinigung aller Aktionsquellen, gleich woher sie kommen. Erkannt wird eine Aktion
+ * daran, dass er gegenüber gestern fällt.
+ *
+ * **Der Preis dieser Entscheidung steht in `permanent_after_days`.** Ohne externes
+ * Signal lässt sich eine lange Aktion nicht von einer dauerhaften Senkung unterscheiden;
+ * die Grenze muss deshalb über der längsten tatsächlich geplanten Aktionsdauer liegen.
+ * Zu niedrig, und die Referenz kippt mitten in einer Aktion auf den Aktionspreis; zu
+ * hoch, und eine echte Dauersenkung schleppt monatelang eine überholte Referenz mit.
+ * Es gibt hier keine Einstellung ohne Nachteil — nur eine bewusst gewählte.
  */
 final class PromoStateMachine
 {
@@ -34,14 +47,12 @@ final class PromoStateMachine
     /**
      * Den Zustand um einen Tag fortschreiben.
      *
-     * @param PriceEvent[]  $events      gesamte bekannte Historie (inkl. heute)
-     * @param bool|null     $promoFlag   Aktionskennzeichen des Shops; null = unbekannt
+     * @param PriceEvent[] $events gesamte bekannte Historie (inkl. heute)
      */
     public function advance(
         PromoState $alt,
         array $events,
         \DateTimeImmutable $heute,
-        ?bool $promoFlag = null,
     ): PromoState {
         $heutigesEvent = $this->eventAm($events, $heute);
         if ($heutigesEvent === null) {
@@ -52,8 +63,8 @@ final class PromoStateMachine
         $gestern = $this->eventAm($events, $heute->modify('-1 day'));
 
         return $alt->isPromo()
-            ? $this->ausPromo($alt, $heutigesEvent, $gestern, $heute, $promoFlag)
-            : $this->ausNormal($alt, $heutigesEvent, $gestern, $events, $heute, $promoFlag);
+            ? $this->ausPromo($alt, $heutigesEvent, $gestern, $heute)
+            : $this->ausNormal($alt, $heutigesEvent, $gestern, $events, $heute);
     }
 
     private function ausNormal(
@@ -62,14 +73,10 @@ final class PromoStateMachine
         ?PriceEvent $gestern,
         array $events,
         \DateTimeImmutable $heute,
-        ?bool $promoFlag,
     ): PromoState {
-        if ($promoFlag === true) {
-            $beginn = 'Aktionskennzeichen des Shops gesetzt';
-        } elseif ($promoFlag === null
-            && $gestern !== null
-            && Money::isLess($heutigesEvent->gross, $gestern->gross)) {
-            $beginn = 'Preissenkung gegenüber Vortag erkannt (Heuristik)';
+        if ($gestern !== null && Money::isLess($heutigesEvent->gross, $gestern->gross)) {
+            $beginn = \sprintf('Preissenkung %s → %s gegenüber dem Vortag',
+                Money::toScale($gestern->gross, 2), Money::toScale($heutigesEvent->gross, 2));
         } else {
             return $alt->mode === PromoState::NORMAL && $alt->lastTransition === ''
                 ? $alt
@@ -81,10 +88,9 @@ final class PromoStateMachine
         // Bezugspunkt ist `heute` — [heute−30, gestern] ist identisch mit
         // [promo_started−30, promo_started−1].
         $referenz = $this->window->lowestBefore($events, $heute);
-        // Ohne Vortagspreis (Aktionskennzeichen am ersten bekannten Tag) gibt es kein
-        // Vorniveau; dann dient der heutige Preis als Rückkehrschwelle, sonst bliebe
-        // der Artikel für immer in `promo`.
-        $vorNiveau = $gestern?->gross ?? $heutigesEvent->gross;
+        // Ohne Preissenkung gäbe es keinen Übergang — an dieser Stelle ist ein
+        // Vortagspreis also immer vorhanden.
+        $vorNiveau = $gestern->gross;
 
         return new PromoState(
             PromoState::PROMO,
@@ -103,24 +109,15 @@ final class PromoStateMachine
         PriceEvent $heutigesEvent,
         ?PriceEvent $gestern,
         \DateTimeImmutable $heute,
-        ?bool $promoFlag,
     ): PromoState {
         $beendet = static fn(string $grund): PromoState => new PromoState(
             PromoState::NORMAL, null, null, null, null, null, null, $grund);
-
-        if ($promoFlag === false) {
-            return $beendet('Aktionskennzeichen des Shops entfallen');
-        }
 
         // Weitere Stufe waehrend der Aktion: Die Referenz bleibt eingefroren (§ 11 Abs. 2),
         // auch `pre_promo_*` bleibt stehen — der Vorstufen-Anker zeigt weiter auf den
         // Preis VOR der Aktion. Nur der Timer wird zurueckgesetzt.
         $weitereSenkung = $gestern !== null
             && Money::isLess($heutigesEvent->gross, $gestern->gross);
-
-        if ($promoFlag === true) {
-            return $weitereSenkung ? $this->mitTimer($alt, $heute) : $alt;
-        }
 
         // Aktion beendet: Der Preis ist auf das Vorniveau (oder darüber) zurück.
         if ($alt->prePromoGross !== null

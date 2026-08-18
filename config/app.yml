@@ -10,8 +10,15 @@ window_days: 30
 # MUSS groesser sein als die laengste geplante Aktionsdauer. Sonst kippt die Referenz
 # mitten in einer langen Aktion auf den Aktionspreis — gemessen im Test: Bei 30 Tagen
 # faellt eine 35-Tage-Aktion faelschlich auf 99,00 statt korrekt auf 119,00 zu bleiben.
-# Ohne externes Signal kann die Heuristik eine lange Aktion nicht von einer Dauersenkung
-# unterscheiden; mit einem iSHOP-Aktionskennzeichen entfaellt sie vollstaendig.
+#
+# ES GIBT KEIN AKTIONSKENNZEICHEN und es soll auch keines geben (Entscheidung GRUBE,
+# 18.08.2026): Aktionen koennen aus verschiedenen Stellen stammen, ein Kennzeichen aus
+# nur einer davon waere schlimmer als keines. Diese Grenze ist damit dauerhaft tragend,
+# nicht uebergangsweise — es gibt keine Einstellung ohne Nachteil, nur eine bewusst
+# gewaehlte:
+#   zu niedrig -> die Referenz kippt mitten in einer langen Aktion auf den Aktionspreis
+#   zu hoch    -> eine echte Dauersenkung schleppt monatelang eine ueberholte Referenz
+# TODO(setup): laengste tatsaechlich geplante Aktionsdauer erfragen und hier daruebersetzen.
 permanent_after_days: 60
 
 # Vorstufen-Anker PREV_NET/PREV_GROSS (§ 6.4): der Preis der unmittelbaren Vorstufe als

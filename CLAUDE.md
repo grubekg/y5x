@@ -60,9 +60,18 @@ Zwei Riegel gegen Dauerzustände:
   keine Aktion, sondern ein neues Normalniveau. Ohne diesen Riegel trüge ein dauerhaft
   gesenkter Artikel ewig eine überholte Referenz.
 
-**Ein Aktionskennzeichen des Shops schlägt jede Heuristik.** Eine Preissenkung ist nicht
-zwingend eine beworbene Ermäßigung, und eine Ermäßigung nicht zwingend eine Senkung
-gegenüber gestern. Solange TODO(setup) 1 offen ist, gilt die Sprung-Heuristik.
+**Es gibt kein Aktionskennzeichen — dauerhaft** (Entscheidung GRUBE, 18.08.2026). Der
+iSHOP liefert keines, und es ist auch keines gewünscht: Aktionen können aus
+**verschiedenen Stellen** stammen, und ein Kennzeichen aus nur einer davon wäre
+**schlimmer als gar keines**. Der Automat würde ihm ausschließlich glauben und jede
+Aktion aus einer anderen Quelle stillschweigend übersehen — ein „nein" bei laufender
+Aktion erzeugt genau die falsche Werbeaussage, die dieses Werkzeug verhindern soll.
+
+Deshalb nimmt der Automat **gar keinen Flag-Parameter mehr entgegen** (ein Test hält das
+per Reflection fest). Ein ungenutzter Parameter wäre eine Einladung, später eine einzelne
+Aktionsquelle anzuklemmen. Das einzige verlässliche Signal ist der **tatsächlich
+angewendete Preis aus dem Shop** — er ist die Vereinigung aller Aktionsquellen, gleich
+woher sie kommen.
 
 ### `Replay` — Nachrechnung zum Stichtag (der Abmahnungsfall)
 
@@ -108,9 +117,18 @@ Die Vorgabe wurde mit dem Nachtrag von 30 auf **60** angehoben, und der Test zei
 warum: Bei 30 Tagen kippt eine 35-Tage-Aktion fälschlich auf den Aktionspreis — die
 Heuristik hält sie für ein neues Normalniveau, die ausgewiesene Referenz fällt von
 119,00 € auf 99,00 €, und die beworbene Ersparnis verschwindet mitten in der Aktion.
-Ohne externes Signal kann die Heuristik eine lange Aktion nicht von einer Dauersenkung
-unterscheiden. **Mit einem iSHOP-Aktionskennzeichen entfällt sie vollständig** — ein
-weiterer Grund, TODO(setup) 1 zu klären.
+
+**Da es kein Aktionskennzeichen geben wird, ist diese Grenze dauerhaft tragend.** Ohne
+externes Signal lässt sich eine lange Aktion nicht von einer dauerhaften Senkung
+unterscheiden, und es gibt hier keine Einstellung ohne Nachteil:
+
+| | Folge |
+|---|---|
+| zu **niedrig** | Referenz kippt mitten in einer langen Aktion auf den Aktionspreis |
+| zu **hoch** | echte Dauersenkung schleppt monatelang eine überholte Referenz mit |
+
+Die Grenze muss über der **längsten tatsächlich geplanten Aktionsdauer** liegen. Diese
+Zahl ist damit eine Geschäftsentscheidung, keine technische — sie steht offen.
 
 ### `ReferenceCalculator` — Konsistenzregel
 
@@ -237,9 +255,11 @@ php bin/demo-seed.php [--loeschen]           # Beispieldaten (nur staging)
 ## Offen (TODO(setup))
 
 1. **iSHOP:** Endpunkt/Query für die Preisabfrage `amount 0` (GraphQL-Introspection),
-   Beispiel-Response — und die entscheidende Frage: **liefert sie ein Aktionskennzeichen?**
-   Falls ja, ersetzt es die Sprung-Heuristik vollständig (`PromoStateMachine` ist darauf
-   vorbereitet, `$promoFlag` durchreichen genügt).
+   Beispiel-Response. — Die Frage nach einem Aktionskennzeichen ist **beantwortet und
+   erledigt**: Es gibt keines und soll keines geben (siehe oben).
+1b. **Längste geplante Aktionsdauer**, damit `permanent_after_days` darübergesetzt werden
+   kann. Ohne Aktionskennzeichen trägt diese Zahl allein — sie ist jetzt die wichtigste
+   offene Angabe.
 2. **PSS-Write:** Upsert-Semantik (Update per Schlüssel vs. delete+create), Schreib-Endpunkt
    und Auth. Der Lese-Payload ist geklärt (siehe oben); zu klären bleibt, ob `30_NET` /
    `30_GROSS` als priceType überhaupt angelegt werden müssen.
@@ -254,6 +274,15 @@ php bin/demo-seed.php [--loeschen]           # Beispieldaten (nur staging)
 7. **`prev_price_max_days` von Legal kalibrieren lassen** (Vorgabe 42 Tage). Ebenso:
    Ist `permanent_after_days: 60` größer als die längste tatsächlich geplante Aktion?
 8. Verzeichnisschutz für `status/` im ISPConfig-Panel; GitHub-Repo `grubekg/y5x` anlegen.
+
+## Zugang zur Statusseite
+
+Benutzer werden mit `php bin/user.php add <mail> <passwort>` angelegt (nur der Hash wird
+gespeichert). Angelegt in **staging**: `alexander.zindler@grube.de`.
+
+Das ersetzt **keinen** Verzeichnisschutz: `.htaccess` wirkt auf nginx nicht, und die
+Anmeldung schützt nur die Seiten selbst. Der Verzeichnisschutz für `status/` ist im
+ISPConfig-Panel zu setzen.
 
 ## Abweichung vom Briefing, bewusst
 

@@ -105,15 +105,13 @@ final class ReferenceCalculator
     }
 
     /**
-     * @param PriceEvent[] $events  gesamte bekannte Historie einschließlich heute
-     * @param bool|null    $promoFlag  Aktionskennzeichen des Shops, falls vorhanden
+     * @param PriceEvent[] $events gesamte bekannte Historie einschließlich heute
      */
     public function calculate(
         array $events,
         PromoState $state,
         \DateTimeImmutable $heute,
         string $currency = 'EUR',
-        ?bool $promoFlag = null,
     ): Reference {
         $vollstaendig = $this->window->isComplete($events, $heute);
 
@@ -127,7 +125,7 @@ final class ReferenceCalculator
                 null, null, 'PREV im Modus rolling nicht definiert');
         }
 
-        $neu = $this->machine->advance($state, $events, $heute, $promoFlag);
+        $neu = $this->machine->advance($state, $events, $heute);
         [$prevNet, $prevGross, $prevGrund] = $this->prev($neu, $heute);
 
         if ($neu->isPromo() && $neu->frozenRefGross !== null) {

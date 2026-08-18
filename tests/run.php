@@ -231,21 +231,32 @@ $luecke = [
 pruefe('Luecke in der Historie verhindert window_complete',
     !$r->calculate($luecke, new PromoState(), tag('2026-08-31'))->windowComplete);
 
-// ------------------------------------------------- Promo-Kennzeichen schlaegt Heuristik
-echo "\n[Aktionskennzeichen des Shops schlaegt die Heuristik (§ 6.2)]\n";
+// ------------------------------------------------- Kein Aktionskennzeichen (Entscheidung)
+echo "\n[Der angewendete Preis ist das einzige Signal (Entscheidung 18.08.2026)]\n";
+// Der iSHOP liefert kein Aktionskennzeichen, und es soll auch keines geben: Aktionen
+// koennen aus verschiedenen Stellen stammen, ein Kennzeichen aus nur einer davon waere
+// schlimmer als keines. Der Automat nimmt deshalb gar keinen Flag-Parameter mehr an.
+pruefe('der Automat nimmt kein Aktionskennzeichen entgegen',
+    (new ReflectionMethod(PromoStateMachine::class, 'advance'))->getNumberOfParameters() === 3);
+pruefe('auch der Rechner nicht',
+    (new ReflectionMethod(ReferenceCalculator::class, 'calculate'))->getNumberOfParameters() === 4);
+
 $ohneSprung = [
     ev('2026-07-01', '2026-08-30', '100.0000', '119.00'),
     ev('2026-08-31', null, '100.0000', '119.00'),
 ];
-$mitFlag = $r->calculate($ohneSprung, new PromoState(), tag('2026-08-31'), 'EUR', true);
-pruefe('Aktion ohne Preissprung wird per Kennzeichen erkannt', $mitFlag->state->isPromo());
-$sprungOhneFlag = [
+pruefe('ohne Preissenkung keine Aktion — egal aus welcher Quelle sie stammen moechte',
+    !$r->calculate($ohneSprung, new PromoState(), tag('2026-08-31'))->state->isPromo());
+$sprung = [
     ev('2026-07-01', '2026-08-30', '100.0000', '119.00'),
     ev('2026-08-31', null, '83.1933', '99.00'),
 ];
-$keinFlag = $r->calculate($sprungOhneFlag, new PromoState(), tag('2026-08-31'), 'EUR', false);
-pruefe('Preissprung OHNE Kennzeichen loest keine Aktion aus, wenn das Kennzeichen fuehrt',
-    !$keinFlag->state->isPromo());
+$erkannt = $r->calculate($sprung, new PromoState(), tag('2026-08-31'));
+pruefe('jede Senkung des angewendeten Preises wird erkannt', $erkannt->state->isPromo());
+pruefe('die Begruendung nennt beide Preise',
+    str_contains($erkannt->state->lastTransition, '119.00')
+    && str_contains($erkannt->state->lastTransition, '99.00'),
+    $erkannt->state->lastTransition);
 
 // ------------------------------------------------- rolling als Rueckfallebene
 echo "\n[rolling — die dokumentierte Schwaeche]\n";
