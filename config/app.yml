@@ -1,0 +1,20 @@
+# frozen = Gesetzeswortlaut (§ 11 PAngV): niedrigster Preis der 30 Tage VOR Beginn der
+# Ermaessigung, waehrend der Aktion eingefroren.
+# rolling = stumpfes Minimum ueber [heute-30, gestern]. Nur als bewusste Rueckfallebene;
+# ab dem zweiten Aktionstag wandert der Aktionspreis selbst ins Fenster und die
+# ausgewiesene Ersparnis laeuft gegen null.
+calculation_mode: frozen
+
+window_days: 30
+permanent_after_days: 30        # promo -> normal, wenn der gesenkte Preis so lange steht
+
+anomaly_alert_threshold: 50     # verworfene Datensaetze je Lauf bis Alert
+batch_size: 100                 # Artikel je iSHOP-Request
+max_write_retries: 3
+
+alert_email: TODO
+run_after: "05:30"              # NACH dem DiVA-Preisimport — TODO(setup): Importzeitpunkt
+
+# true = rechnen und protokollieren, aber NICHT in den PSS schreiben.
+# Auslieferungszustand ist der Trockenmodus: Scharfschalten ist eine bewusste Handlung.
+dry_run: true

@@ -1,0 +1,15 @@
+# Ein Markt = ein Shop = eine Waehrung. Die Waehrung wird bei jedem Lauf gegen die
+# Antwort des Shops geprueft; weicht sie ab, bricht der Markt-Lauf ab (Alert). Ein
+# stillschweigend in der falschen Waehrung gefuehrter Referenzpreis waere eine falsche
+# Werbeaussage, kein Schoenheitsfehler.
+markets:
+  DE: { currency: EUR, shop: TODO, write_enabled: true,  active: true }
+  AT: { currency: EUR, shop: TODO, write_enabled: true,  active: true }
+  FR: { currency: EUR, shop: TODO, write_enabled: true,  active: true }
+  PL: { currency: PLN, shop: TODO, write_enabled: true,  active: true }
+  SK: { currency: EUR, shop: TODO, write_enabled: true,  active: true }
+  SE: { currency: SEK, shop: TODO, write_enabled: true,  active: true }
+  DK: { currency: DKK, shop: TODO, write_enabled: true,  active: true }
+  # Die Schweizer Preisbekanntgabeverordnung folgt NICHT der EU-30-Tage-Logik.
+  # Getrackt wird trotzdem, damit Historie vorliegt, wenn Legal entscheidet.
+  CH: { currency: CHF, shop: TODO, write_enabled: false, active: true }
