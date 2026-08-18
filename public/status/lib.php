@@ -231,7 +231,11 @@ function zugangsseite(string $h1, string $inhalt, string $fehler = '', string $h
      und Referenzlinie. Rein dekorativ, deshalb aria-hidden. -->
 <div class="motiv" aria-hidden="true">
   <svg viewBox="0 0 1200 620" preserveAspectRatio="xMidYMid slice">
-    <rect x="470" y="0" width="300" height="620" fill="#2e5240" opacity=".05"/>
+    <!-- Mittig im viewBox (0…1200), damit der Streifen unter der Karte steht: Bei
+         preserveAspectRatio="xMidYMid slice" faellt die viewBox-Mitte (600) auf die
+         Mitte des Fensters, und dort sitzt auch die Karte. Vorher stand der Streifen
+         bei 470…770, seine Mitte also 20 Einheiten daneben. -->
+    <rect x="450" y="0" width="300" height="620" fill="#2e5240" opacity=".05"/>
     <path d="M-20,180 H360 V330 H620 V180 H900 V430 H1220" fill="none"
           stroke="#14231b" stroke-width="3" opacity=".07" stroke-linejoin="round"/>
     <path d="M-20,196 H900 V346 H1220" fill="none" stroke="#a8231b"
