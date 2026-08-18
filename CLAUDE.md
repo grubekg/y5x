@@ -483,6 +483,21 @@ Klartextschlüssel steht nicht in der Datenbank.
 CLI-Weg unverändert vorhanden: `php bin/user.php add <mail> <passwort> [admin|user] [admin|user]` —
 für den allerersten Zugang, wenn es noch niemanden gibt, der einladen könnte.
 
+### Eine Hülle für alles vor der Anmeldung
+
+`zugangsseite()` trägt Anmeldemaske **und** Einladung: Motiv, Marke, Karte mit
+Umgebungs-Chip, Fehlerkasten, Hilfetext, Fußzeile, Auftauch-Animation mit
+`prefers-reduced-motion`. Vorher hatte jede Seite ihre eigene Kopie desselben Aufbaus —
+und prompt fehlten der Einladungsseite Wasserzeichen, Umgebungs-Chip und Fußzeile. Zwei
+Kopien einer Gestaltung driften immer; die Frage ist nur, wann es auffällt.
+
+### Kopfleiste und Inhalt auf einer Achse
+
+Die dunkle Fläche läuft über die volle Breite, ihr **Inhalt** nicht — er sitzt in
+`.kopfinhalt` auf derselben Achse wie `main`. Sonst klebt die Marke am linken
+Bildschirmrand, während die erste Tabellenspalte zweihundert Pixel weiter innen beginnt.
+Beide Breiten kommen aus **einer** Variablen (`--breite`) und können nicht auseinanderlaufen.
+
 ### Anmeldung
 
 Generische Fehlermeldung (die Maske darf kein Kontoverzeichnis werden), Versuchssperre

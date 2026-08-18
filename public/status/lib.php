@@ -168,48 +168,67 @@ function require_login(): void
     exit;
 }
 
-function anmeldeseite(string $fehler = ''): void
+/**
+ * Gemeinsame Hülle aller Seiten VOR der Anmeldung — Anmeldung wie Einladung.
+ *
+ * Bewusst eine Funktion und keine zwei Vorlagen: Beide Seiten hatten zuerst je eine
+ * eigene Kopie desselben Aufbaus, und prompt liefen sie auseinander (Hintergrundmotiv,
+ * Umgebungs-Chip und Fußzeile fehlten der Einladungsseite). Zwei Kopien einer Gestaltung
+ * driften immer; die Frage ist nur, wann es jemandem auffällt.
+ *
+ * @param string $h1      Überschrift in der Karte
+ * @param string $inhalt  fertiges HTML des Karteninhalts
+ * @param string $fehler  optionaler Meldungstext (rot, role=alert)
+ * @param string $hilfe   optionale Fußnote unter der Karte
+ */
+function zugangsseite(string $h1, string $inhalt, string $fehler = '', string $hilfe = ''): void
 {
     $env = y5x_env();
     ?><!doctype html><html lang="de"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Bestpreis-Tracker — Anmeldung</title>
+<title>Bestpreis-Tracker — <?= h($h1) ?></title>
 <?php y5x_stil(); ?>
 <style>
  html,body{height:100%}
  body{display:grid;place-items:center;padding:1.2rem;font-size:15px}
  .motiv{position:fixed;inset:0;pointer-events:none;z-index:0}
  .motiv svg{width:100%;height:100%}
- .buehne{position:relative;z-index:1;width:min(24.5rem,100%)}
+ .buehne{position:relative;z-index:1;width:min(26rem,100%)}
  .marke-gross{margin:0 0 .9rem}
- .marke-gross b{font-size:1.15rem}
+ .marke-gross b{font-size:1.15rem;letter-spacing:.02em}
  .marke-gross small{display:block;color:var(--neutral);font-size:.72rem;
    letter-spacing:.16em;text-transform:uppercase;margin-top:.15rem}
- .anmeldung{background:var(--karte);border:1px solid var(--linie);border-radius:10px;
+ .zugang{background:var(--karte);border:1px solid var(--linie);border-radius:10px;
    padding:1.3rem 1.4rem 1.5rem;box-shadow:0 1px 2px rgba(20,35,27,.06)}
- .kopfzeile{display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem}
- .kopfzeile h1{font-size:1.02rem;margin:0}
- .umgebung{border-radius:99px;padding:.14rem .6rem;font-size:.76rem;font-weight:700}
+ .zugang .kopfzeile{display:flex;justify-content:space-between;align-items:center;
+   gap:.8rem;margin-bottom:1rem}
+ .zugang h1{font-size:1.02rem;margin:0}
+ .umgebung{border-radius:99px;padding:.14rem .6rem;font-size:.76rem;font-weight:700;
+   white-space:nowrap}
  .umgebung.staging{background:#f2c14e;color:#241d05}
  .umgebung.prod{background:var(--tanne-hell);color:#fff}
  .fehlerkasten{background:var(--vorfall-flaeche);border:1px solid #e5b8b4;
    border-left:4px solid var(--vorfall);border-radius:8px;padding:.6rem .8rem;
    margin-bottom:1rem;font-size:.9rem}
  .fehlerkasten b{color:var(--vorfall)}
- .anmeldung label{display:block;font-size:.78rem;color:var(--neutral);font-weight:600;
+ .zugang label{display:block;font-size:.78rem;color:var(--neutral);font-weight:600;
    letter-spacing:.04em;margin:0 0 .25rem}
- .anmeldung input{width:100%;padding:.6rem .65rem;border:1px solid var(--linie-stark);
+ .zugang input{width:100%;padding:.6rem .65rem;border:1px solid var(--linie-stark);
    border-radius:7px;background:#fff;font:inherit;margin-bottom:.9rem}
- .anmeldung .knopf{width:100%;padding:.65rem .9rem;font-size:.95rem;margin-top:.2rem}
+ .zugang input.mono{font-family:var(--mono)}
+ .zugang .knopf{width:100%;padding:.65rem .9rem;font-size:.95rem;margin-top:.2rem}
+ .zugang p{margin:.2rem 0 .9rem;color:var(--neutral);font-size:.9rem}
  .hilfe{margin-top:.9rem;font-size:.82rem;color:var(--neutral)}
  .fuss{margin-top:1rem;color:var(--neutral);font-size:.76rem;display:flex;
    justify-content:space-between;gap:1rem;flex-wrap:wrap}
  @media (prefers-reduced-motion:no-preference){
-   .anmeldung{animation:auftauchen .28s ease-out}
+   .zugang{animation:auftauchen .28s ease-out}
    @keyframes auftauchen{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
  }
 </style>
 </head><body>
+<!-- Das Messschrieb-Motiv der Nachweisseite als Wasserzeichen: Preistreppe, Fenster
+     und Referenzlinie. Rein dekorativ, deshalb aria-hidden. -->
 <div class="motiv" aria-hidden="true">
   <svg viewBox="0 0 1200 620" preserveAspectRatio="xMidYMid slice">
     <rect x="470" y="0" width="300" height="620" fill="#2e5240" opacity=".05"/>
@@ -222,14 +241,29 @@ function anmeldeseite(string $fehler = ''): void
 <div class="buehne">
   <p class="marke-gross"><b>Bestpreis-Tracker</b>
     <small>Preisnachweis · § 11 PAngV · GRUBE KG</small></p>
-  <div class="anmeldung">
+  <div class="zugang">
     <div class="kopfzeile">
-      <h1>Anmeldung</h1>
+      <h1><?= h($h1) ?></h1>
       <span class="umgebung <?= $env === 'prod' ? 'prod' : 'staging' ?>"><?= h($env) ?></span>
     </div>
     <?php if ($fehler !== ''): ?>
-    <div class="fehlerkasten" role="alert"><b>Anmeldung nicht möglich.</b> <?= h($fehler) ?></div>
+    <div class="fehlerkasten" role="alert"><b>Nicht möglich.</b> <?= h($fehler) ?></div>
     <?php endif; ?>
+    <?= $inhalt ?>
+  </div>
+  <?php if ($hilfe !== ''): ?><p class="hilfe"><?= $hilfe ?></p><?php endif; ?>
+  <p class="fuss"><span>Internes Werkzeug · Anmeldungen werden protokolliert</span>
+    <span class="mono">Läufe täglich 05:30</span></p>
+</div>
+</body></html>
+    <?php
+}
+
+/** Die Anmeldemaske — nutzt dieselbe Hülle wie die Einladung. */
+function anmeldeseite(string $fehler = ''): void
+{
+    \ob_start();
+    ?>
     <form method="post">
       <input type="hidden" name="action" value="login">
       <label for="a-mail">E-Mail-Adresse</label>
@@ -239,15 +273,11 @@ function anmeldeseite(string $fehler = ''): void
       <input id="a-pass" name="password" type="password" required autocomplete="current-password">
       <button class="knopf" type="submit">Anmelden</button>
     </form>
-    <p class="hilfe">Zugang verloren oder neues Konto nötig?
-      <a href="mailto:ecommerce@grube.de">Kurze Nachricht genügt</a> — es gibt bewusst
-      keinen Selbstservice zum Zurücksetzen.</p>
-  </div>
-  <p class="fuss"><span>Internes Werkzeug · Anmeldungen werden protokolliert</span>
-    <span class="mono">Läufe täglich 05:30</span></p>
-</div>
-</body></html>
     <?php
+    zugangsseite('Anmeldung', (string) \ob_get_clean(), $fehler,
+        'Zugang verloren oder neues Konto nötig? '
+        . '<a href="mailto:ecommerce@grube.de">Kurze Nachricht genügt</a> — es gibt bewusst '
+        . 'keinen Selbstservice zum Zurücksetzen.');
 }
 
 /**
@@ -433,6 +463,7 @@ function seitenkopf(string $titel, string $aktiv = ''): void
 <?php y5x_stil(); ?>
 </head><body>
 <header>
+  <div class="kopfinhalt">
   <div class="marke">Bestpreis-Tracker<small>Preisnachweis · § 11 PAngV</small></div>
   <nav aria-label="Bereiche">
     <a href="index.php"<?= $aktiv === 'index' ? ' aria-current="page"' : '' ?>>Übersicht</a>
@@ -450,6 +481,7 @@ function seitenkopf(string $titel, string $aktiv = ''): void
        title="Konto: Passwort ändern, Zugänge verwalten"
        <?= $aktiv === 'konto' ? 'aria-current="page" style="text-decoration:none;background:rgba(255,255,255,.16)"' : '' ?>><?= h(current_user()) ?></a>
     <a class="chip" href="?abmelden=1" style="text-decoration:none">abmelden</a>
+  </div>
   </div>
 </header>
 <main>

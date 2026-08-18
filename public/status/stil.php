@@ -27,6 +27,7 @@ function y5x_stil(): void
   --vorfall:#a8231b; --vorfall-flaeche:#f9e7e5; --neutral:#6b6b64;
   --aktion:#c46a00; --aktion-flaeche:#f7e3c8;
   --referenz:#a8231b; --vorstufe:#6d4a9e; --preis:#1d3a2b; --fenster:#2e5240;
+  --breite:1180px;
   --mono:ui-monospace,"SF Mono","Cascadia Code",Consolas,"Liberation Mono",monospace;
 }
 *{box-sizing:border-box}
@@ -35,7 +36,13 @@ body{margin:0;background:var(--papier);color:var(--tinte);
 a{color:var(--tanne-hell)}
 code,.mono{font-family:var(--mono);font-size:.94em}
 
-header{background:var(--tanne);color:#eef2ee;padding:.65rem 1.2rem;
+/* Die dunkle Flaeche laeuft ueber die volle Breite, ihr INHALT nicht: Er sitzt auf
+   derselben Achse wie der Seiteninhalt. Sonst klebt die Marke am linken Bildschirmrand,
+   waehrend die erste Tabellenspalte 200 px weiter innen beginnt — auf einem breiten
+   Schirm sieht das aus wie zwei verschiedene Seiten. Beide Breiten kommen deshalb aus
+   EINER Variablen und koennen nicht auseinanderlaufen. */
+header{background:var(--tanne);color:#eef2ee;padding:.65rem 1.2rem}
+header .kopfinhalt{max-width:var(--breite);margin:0 auto;
        display:flex;align-items:center;gap:1.1rem;flex-wrap:wrap}
 header .marke{font-weight:700;letter-spacing:.02em}
 header .marke small{display:block;font-weight:400;color:#a9bcae;font-size:.72rem;
@@ -50,7 +57,7 @@ header nav a:hover{background:rgba(255,255,255,.09)}
 .chip.trocken{background:#f2c14e;border-color:#f2c14e;color:#241d05;font-weight:700}
 .chip.scharf{background:var(--vorfall);border-color:var(--vorfall);color:#fff;font-weight:700}
 
-main{max-width:1180px;margin:0 auto;padding:1.1rem 1.2rem 3rem}
+main{max-width:var(--breite);margin:0 auto;padding:1.1rem 1.2rem 3rem}
 h2{font-size:.78rem;letter-spacing:.16em;text-transform:uppercase;color:var(--neutral);
    margin:1.9rem 0 .55rem;font-weight:700}
 h2:first-of-type{margin-top:1.1rem}
