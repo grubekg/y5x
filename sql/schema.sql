@@ -112,3 +112,12 @@ CREATE TABLE IF NOT EXISTS {{P}}login_log (
   KEY idx_sperre (username, ip, versucht_at),
   KEY idx_zeit (versucht_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Artikelbezeichnung (Anzeigehilfe, nicht Beweisgrundlage).
+CREATE TABLE IF NOT EXISTS {{P}}article_meta (
+  sku        VARCHAR(64)  NOT NULL,
+  market     CHAR(2)      NOT NULL,
+  name       VARCHAR(255) NULL,
+  fetched_at DATETIME     NOT NULL,
+  PRIMARY KEY (sku, market)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

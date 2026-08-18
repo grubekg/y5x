@@ -95,6 +95,16 @@ tbody tr:hover{background:#fbfbf7}
 td .sub{display:block;color:var(--neutral);font-size:.78rem;font-family:system-ui;letter-spacing:0}
 tr.offen td{background:#fbfdf9}
 
+/* Ganze Zeile anklickbar — ohne JavaScript und ohne die Tastaturbedienung zu verlieren:
+   Der Link in der ersten Zelle wird per ::after über die Zeile gespannt. Er bleibt ein
+   echter Link, also fokussierbar, kopierbar und in neuem Tab zu öffnen. */
+tr.klickbar{position:relative}
+tr.klickbar:hover td{background:#f3f6f1}
+.zeilenlink{text-decoration:none;color:inherit}
+.zeilenlink::after{content:"";position:absolute;inset:0}
+.zeilenlink:focus-visible::after{outline:2px solid var(--tanne-hell);outline-offset:-2px}
+tr.klickbar a:not(.zeilenlink){position:relative;z-index:1}
+
 .status{display:inline-flex;align-items:center;gap:.3rem;border-radius:5px;
         padding:.08rem .5rem;font-size:.78rem;font-weight:600;white-space:nowrap}
 .status::before{font-family:var(--mono)}

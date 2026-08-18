@@ -2,14 +2,20 @@
 # Antwort des Shops geprueft; weicht sie ab, bricht der Markt-Lauf ab (Alert). Ein
 # stillschweigend in der falschen Waehrung gefuehrter Referenzpreis waere eine falsche
 # Werbeaussage, kein Schoenheitsfehler.
+# `url` = oeffentliche Shop-Adresse. Der Link auf einen Artikel entsteht daraus als
+# <url>/search/?q=<Artikelnummer> — der Shop leitet von dort direkt auf die Produktseite
+# mit vorgewaehltem Artikel um (geprueft 18.08.2026:
+# /search/?q=1000172720 -> /p/erdbohrgeraet-vertex-g250/100017/?articleNo=1000172720#it).
+# Das ist stabiler als ein selbst zusammengesetzter Produktpfad, der Slug und Produkt-ID
+# braeuchte, die wir gar nicht fuehren.
 markets:
-  DE: { currency: EUR, shop: TODO, write_enabled: true,  active: true }
-  AT: { currency: EUR, shop: TODO, write_enabled: true,  active: true }
-  FR: { currency: EUR, shop: TODO, write_enabled: true,  active: true }
-  PL: { currency: PLN, shop: TODO, write_enabled: true,  active: true }
-  SK: { currency: EUR, shop: TODO, write_enabled: true,  active: true }
-  SE: { currency: SEK, shop: TODO, write_enabled: true,  active: true }
-  DK: { currency: DKK, shop: TODO, write_enabled: true,  active: true }
+  DE: { currency: EUR, shop: TODO, url: "https://www.grube.de", write_enabled: true,  active: true }
+  AT: { currency: EUR, shop: TODO, url: TODO, write_enabled: true,  active: true }
+  FR: { currency: EUR, shop: TODO, url: TODO, write_enabled: true,  active: true }
+  PL: { currency: PLN, shop: TODO, url: TODO, write_enabled: true,  active: true }
+  SK: { currency: EUR, shop: TODO, url: TODO, write_enabled: true,  active: true }
+  SE: { currency: SEK, shop: TODO, url: TODO, write_enabled: true,  active: true }
+  DK: { currency: DKK, shop: TODO, url: TODO, write_enabled: true,  active: true }
   # Die Schweizer Preisbekanntgabeverordnung folgt NICHT der EU-30-Tage-Logik.
   # Getrackt wird trotzdem, damit Historie vorliegt, wenn Legal entscheidet.
-  CH: { currency: CHF, shop: TODO, write_enabled: false, active: true }
+  CH: { currency: CHF, shop: TODO, url: TODO, write_enabled: false, active: true }

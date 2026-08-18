@@ -1,0 +1,11 @@
+{
+  "name": "grube/y5x",
+  "description": "30-Tage-Bestpreis-Tracker (§ 11 PAngV)",
+  "type": "project",
+  "require": {
+    "php": ">=8.2",
+    "mpdf/mpdf": "^8.2"
+  },
+  "config": { "optimize-autoloader": true, "sort-packages": true },
+  "autoload": { "psr-4": { "Grube\\Price30\\": "src/" } }
+}

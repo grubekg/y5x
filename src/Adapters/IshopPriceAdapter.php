@@ -110,6 +110,32 @@ final class IshopPriceAdapter
     }
 
     /**
+     * Bezeichnung eines Artikels — `import:E0074` am Item-Objekt.
+     *
+     * Bewusst getrennt vom Preisabruf und nur bei Bedarf: Der Name ist Anzeigehilfe,
+     * keine Beweisgrundlage. Ihn bei jedem Tageslauf für 35.000 Artikel mitzuziehen
+     * wäre 0,27 s und 389 KB je Artikel — für eine Zeile Text.
+     */
+    public function name(string $sku): ?string
+    {
+        $html = $this->http->get('/admin/os/info', [
+            'id' => 'com.novomind.ishop.core.Item#' . $sku, 'page' => 0, 'pageSize' => 3000,
+        ])['body'];
+        if (!\preg_match('/import:E0074<\/td>(.*?)<\/tr>/s', $html, $m)) {
+            return null;
+        }
+        \preg_match_all('/<td[^>]*>(.*?)<\/td>/s', $m[1], $z);
+        $roh = \trim(\strip_tags(\end($z[1]) ?: ''));
+        $roh = \trim(\preg_replace('/^.*\|\s*/', '', $roh) ?? '');
+        // Interne Anhaengsel des Object Storage entfernen — `Maindata Reference:A15768275`
+        // ist eine Verwaltungsnummer und hat auf einem Nachweisdokument nichts verloren.
+        $roh = \preg_replace('/\\s*Maindata Reference:\\S*/', '', $roh) ?? $roh;
+        $roh = \preg_replace('/\\s*\\[value=.*?\\]/', '', $roh) ?? $roh;
+        $roh = \trim(\preg_replace('/\s+/', ' ', $roh) ?? '', " ,;\t\n");
+        return $roh !== '' ? \mb_substr($roh, 0, 255) : null;
+    }
+
+    /**
      * `"949,00 "` -> `"949.0000"`.
      *
      * Deutsche Schreibweise mit angehängtem Leerzeichen. Ein stiller Rückfall auf 0 wäre

@@ -45,35 +45,44 @@ $replay = new Replay($rechner);
 
 seitenkopf($sku !== '' ? "Nachweis $sku" : 'Artikel & Nachweis', 'artikel');
 ?>
+<?php if ($sku === ''): ?>
+<!-- Auswahlfelder feuern direkt ab (ein `onchange`, kein Framework). Ohne JavaScript
+     bleibt der Knopf sichtbar — die Seite funktioniert in jedem Fall. -->
 <form class="suche" method="get">
   <span><label for="f-q">Artikel suchen</label>
     <input id="f-q" name="q" value="<?= h($suche) ?>" placeholder="Artikelnummer"
            class="mono" size="16" inputmode="numeric"></span>
   <span><label for="f-markt">Markt</label>
-    <select id="f-markt" name="markt"><?php foreach (maerkte() as $c => $m):
+    <select id="f-markt" name="markt" onchange="this.form.submit()"><?php foreach (maerkte() as $c => $m):
         if (!($m['active'] ?? false)) { continue; } ?>
       <option<?= $markt === $c ? ' selected' : '' ?>><?= h($c) ?></option>
     <?php endforeach; ?></select></span>
   <span><label for="f-filter">Auswahl</label>
-    <select id="f-filter" name="filter">
+    <select id="f-filter" name="filter" onchange="this.form.submit()">
       <?php foreach (['alle' => 'alle Artikel', 'aktion' => 'in Aktion',
                       'normal' => 'ohne Aktion', 'risiko' => 'Risiko',
                       'unvollstaendig' => 'Fenster unvollständig'] as $k => $v): ?>
       <option value="<?= $k ?>"<?= $filter === $k ? ' selected' : '' ?>><?= $v ?></option>
       <?php endforeach; ?>
     </select></span>
-  <?php if ($sku !== ''): ?>
-  <span><label for="f-tag">Stichtag</label>
-    <input id="f-tag" type="date" name="stichtag" value="<?= h($stichtag) ?>"></span>
-  <input type="hidden" name="sku" value="<?= h($sku) ?>">
-  <?php endif; ?>
-  <button class="knopf" type="submit"><?= $sku !== '' ? 'Prüfen' : 'Filtern' ?></button>
-  <?php if ($sku !== ''): ?>
-  <button class="knopf sekundaer" type="button" onclick="window.print()">Nachweis drucken</button>
-  <a class="knopf sekundaer" style="text-decoration:none;line-height:1.6"
-     href="?markt=<?= h($markt) ?>&amp;filter=<?= h($filter) ?>">zur Liste</a>
-  <?php endif; ?>
+  <noscript><button class="knopf" type="submit">Filtern</button></noscript>
+  <button class="knopf" type="submit" style="display:none" id="k-filtern">Filtern</button>
+  <script>document.getElementById('k-filtern').remove()</script>
 </form>
+<?php else: ?>
+<form class="suche" method="get">
+  <input type="hidden" name="sku" value="<?= h($sku) ?>">
+  <input type="hidden" name="markt" value="<?= h($markt) ?>">
+  <span><label for="f-tag">Stichtag</label>
+    <input id="f-tag" type="date" name="stichtag" value="<?= h($stichtag) ?>"
+           onchange="this.form.submit()"></span>
+  <noscript><button class="knopf" type="submit">Prüfen</button></noscript>
+  <a class="knopf" style="text-decoration:none;line-height:1.6"
+     href="nachweis-pdf.php?sku=<?= \urlencode($sku) ?>&amp;markt=<?= h($markt) ?>&amp;stichtag=<?= h($stichtag) ?>">Nachweis herunterladen (PDF)</a>
+  <a class="knopf sekundaer" style="text-decoration:none;line-height:1.6"
+     href="?markt=<?= h($markt) ?>">zur Liste</a>
+</form>
+<?php endif; ?>
 
 <?php
 // ============================================================ Liste (ohne SKU)
@@ -117,14 +126,16 @@ if ($sku === ''):
 <table>
 <thead><tr><th>Artikel</th><th>Zustand</th><th class="zahl">Preis heute</th>
   <th class="zahl">Referenz 30 T.</th><th class="zahl">Vorstufe</th>
-  <th>Fenster</th><th>zuletzt geschrieben</th><th></th></tr></thead>
+  <th>Fenster</th><th>zuletzt geschrieben</th></tr></thead>
 <tbody>
 <?php foreach ($zeilen as $r):
     $cur = (string) ($r['currency'] ?? 'EUR');
     $inAktion = $r['mode'] === 'promo';
 ?>
-<tr<?= $inAktion ? ' class="offen"' : '' ?>>
-  <td class="mono"><b><?= h($r['sku']) ?></b>
+<tr class="klickbar<?= $inAktion ? ' offen' : '' ?>">
+  <td class="mono">
+      <a href="?sku=<?= \urlencode($r['sku']) ?>&amp;markt=<?= h($markt) ?>"
+         class="zeilenlink"><b><?= h($r['sku']) ?></b></a>
       <span class="sub">seit <?= datum($r['vk_seit']) ?> unverändert</span></td>
   <td><?php if ($inAktion): ?>
         <span class="status aktion">Aktion</span>
@@ -139,7 +150,6 @@ if ($sku === ''):
   <td class="mono"><?= $r['last_written_at']
         ? h(\date('d.m.Y H:i', \strtotime((string) $r['last_written_at'])))
         : '<span class="sub" style="font-family:system-ui">' . ($trocken ? 'Trockenmodus' : 'noch nie') . '</span>' ?></td>
-  <td><a href="?sku=<?= \urlencode($r['sku']) ?>&amp;markt=<?= h($markt) ?>">Nachweis</a></td>
 </tr>
 <?php endforeach; ?>
 </tbody>
@@ -181,9 +191,10 @@ else:
     $ref      = $replay->until($events, $stich, $waehrung);
     $jetzt    = $replay->until($events, $heute, $waehrung);
     $preisTag = $replay->priceOn($events, $stich);
-    $fensterTage = $replay->windowDays($events, $stich, $tage);
-    $quelle = $ref !== null && $ref->hasValue()
-        ? $fenster->lowestIn($events, ...$fenster->bounds($stich)) : null;
+    // Das Fenster, aus dem die Referenz wirklich stammt — bei laufender Aktion ist das
+    // das Fenster VOR dem Aktionsbeginn, nicht das vor dem Stichtag.
+    [$fVon, $fBis, $quelle, $fWort] = beleg_fenster($fenster, $events, $ref, $stich);
+    $fensterTage = $replay->windowDays($events, $fBis->modify('+1 day'), $tage);
     $zustand = db()->one('SELECT * FROM {p}price_state WHERE sku = ? AND market = ?', [$sku, $markt]);
 
     // Aktionszeiträume für das Diagramm — nachgerechnet, nicht gespeichert.
@@ -206,6 +217,8 @@ else:
 ?>
 <div class="druckkopf">
   <h1>Preisnachweis <?= h($sku) ?> · Markt <?= h($markt) ?></h1>
+  <?php if (($nameOben = artikelname($sku, $markt)) !== null): ?>
+  <p><b><?= h($nameOben) ?></b></p><?php endif; ?>
   <p>Zeitraum <?= datum($ersterTag->format('Y-m-d')) ?>–<?= datum($letzterTag->format('Y-m-d')) ?> ·
      Stichtag <?= datum($stichtag) ?> · erstellt <?= \date('d.m.Y H:i') ?> von <?= h(current_user()) ?></p>
   <p>Quelle: <span class="mono">price_events</span> (lückenlose Preisintervalle),
@@ -213,8 +226,17 @@ else:
      Intervallen <b>nachgerechnet</b>, nicht nachgeschlagen.</p>
 </div>
 
+<?php
+    $name = artikelname($sku, $markt);
+    $link = shoplink($sku, $markt);
+?>
 <div class="artikelkopf">
   <span class="sku"><?= h($sku) ?></span>
+  <?php if ($name !== null): ?><span style="font-size:1.02rem"><?= h($name) ?></span><?php endif; ?>
+  <?php if ($link !== null): ?>
+    <a href="<?= h($link) ?>" target="_blank" rel="noopener"
+       style="font-size:.85rem">im Shop ansehen ↗</a>
+  <?php endif; ?>
   <?php if ($jetzt?->state->isPromo()): ?>
     <span class="status aktion">Aktion seit <?= datum($jetzt->state->promoStarted?->format('Y-m-d')) ?>
       — Tag <?= (int) $jetzt->state->promoStarted?->diff($heute)->days + 1 ?></span>
@@ -240,6 +262,9 @@ else:
 <?php endif; ?>
 
 <h2>Preisverlauf &amp; Referenz — Messschrieb</h2>
+<p class="fussnote" style="margin:0 0 .4rem">Schattiert ist das <?= $tage ?>-Tage-Fenster
+vor dem <b><?= h($fWort) ?></b> (<?= datum($fVon->format('Y-m-d')) ?>–<?= datum($fBis->format('Y-m-d')) ?>) —
+also genau der Zeitraum, aus dem die ausgewiesene Referenz stammt.</p>
 <div class="schrieb">
 <?= (new Chart())->render($reihe,
       $fensterTage !== [] ? ['from' => $fensterTage[0]['date'],

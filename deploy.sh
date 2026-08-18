@@ -17,6 +17,9 @@ rsync -a --delete "$REPO/bin/" "$RUN/bin/"
 rsync -a --delete "$REPO/tests/" "$RUN/tests/"
 rsync -a          "$REPO/config/" "$RUN/config/"     # ohne --delete: lokale Anpassungen bleiben
 cp "$REPO/autoload.php" "$RUN/autoload.php"
+# vendor/ (mpdf fuer den PDF-Nachweis) wird mitgespiegelt — rsync arbeitet inkrementell,
+# nach dem ersten Mal kostet das nichts. Ohne vendor gibt es keinen PDF-Download.
+[ -d "$REPO/vendor" ] && rsync -a --delete "$REPO/vendor/" "$RUN/vendor/"
 
 # Statusseite: Der FPM-Pool dieses Webspace darf nur web/, private/ und tmp/ lesen —
 # ein require auf $HOME/secrets/db.php endet mit "Permission denied" und einem 500er.

@@ -150,10 +150,13 @@ final class Chart
 
         // --- Stichtag ----------------------------------------------------------
         if ($stichtag !== null && isset($idx[$stichtag])) {
+            // Beschriftung nach innen ziehen, wenn der Stichtag am Rand liegt — sonst
+            // wird sie beschnitten (im PDF fiel „Stichtag" halb aus dem Bild).
+            $sx = $x($idx[$stichtag]);
+            $anker = $sx > $this->width - $r - 30 ? 'end' : ($sx < $l + 30 ? 'start' : 'middle');
             $svg .= \sprintf('<line x1="%.1f" y1="%d" x2="%.1f" y2="%d" class="stichtag"/>'
-                . '<text x="%.1f" y="%d" class="mini" text-anchor="middle">Stichtag</text>',
-                $x($idx[$stichtag]), $o, $x($idx[$stichtag]), $o + $ih,
-                $x($idx[$stichtag]), $o + $ih + 26);
+                . '<text x="%.1f" y="%d" class="mini" text-anchor="%s">Stichtag</text>',
+                $sx, $o, $sx, $o + $ih, $sx, $o + $ih + 26, $anker);
         }
 
         // --- Datumsbeschriftung -------------------------------------------------

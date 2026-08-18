@@ -93,6 +93,21 @@ function current_user(): string
 function require_login(): void
 {
     start_session();
+
+    if (isset($_GET['abmelden'])) {
+        // Vollstaendig abraeumen, nicht nur den Benutzer aus der Sitzung nehmen:
+        // Sitzungsdaten, Cookie, Sitzungs-ID.
+        $_SESSION = [];
+        if (ini_get('session.use_cookies')) {
+            $p = session_get_cookie_params();
+            setcookie(session_name(), '', time() - 42000, $p['path'], $p['domain'],
+                      $p['secure'], $p['httponly']);
+        }
+        session_destroy();
+        header('Location: ' . strtok((string) ($_SERVER['PHP_SELF'] ?? 'index.php'), '?'));
+        exit;
+    }
+
     if (!empty($_SESSION['user'])) {
         return;
     }
@@ -213,6 +228,82 @@ function anmeldeseite(string $fehler = ''): void
 }
 
 /**
+ * Artikelbezeichnung — aus dem Zwischenspeicher, sonst einmalig aus dem iSHOP.
+ *
+ * Der Name ist Anzeigehilfe, keine Beweisgrundlage: `price_events` bleibt unberührt.
+ * Deshalb eine eigene Tabelle mit Abrufzeitpunkt — ändert der Shop die Bezeichnung,
+ * bleibt nachvollziehbar, welchen Stand ein gedruckter Nachweis zeigte.
+ */
+function artikelname(string $sku, string $markt): ?string
+{
+    $z = db()->one('SELECT name FROM {p}article_meta WHERE sku = ? AND market = ?', [$sku, $markt]);
+    if ($z !== null) {
+        return $z['name'];
+    }
+    $name = null;
+    try {
+        $env = new Grube\Price30\Support\Env(y5x_runtime() . '/.env');
+        $adapter = new Grube\Price30\Adapters\IshopPriceAdapter(
+            new Grube\Price30\Support\Http($env->get('ISHOP_BASE_URL'),
+                $env->get('ISHOP_USER'), $env->get('ISHOP_PASS'), 20));
+        $name = $adapter->name($sku);
+    } catch (\Throwable) {
+        // Der Shop ist nicht erreichbar — das darf den Nachweis nicht aufhalten.
+        return null;
+    }
+    db()->execute('INSERT INTO {p}article_meta (sku, market, name, fetched_at)
+                   VALUES (?,?,?,NOW()) ON DUPLICATE KEY UPDATE name = VALUES(name),
+                   fetched_at = NOW()', [$sku, $markt, $name]);
+    return $name;
+}
+
+/**
+ * Link auf den Artikel im Shop.
+ *
+ * Über die Shop-Suche statt über einen selbst gebauten Produktpfad: `/search/?q=<sku>`
+ * leitet direkt auf die Produktseite mit vorgewähltem Artikel um (geprüft 18.08.2026).
+ * Ein selbst zusammengesetzter Pfad bräuchte Slug und Produkt-ID, die wir gar nicht
+ * führen — und wäre bei jeder Umbenennung kaputt.
+ */
+function shoplink(string $sku, string $markt): ?string
+{
+    $url = (string) (maerkte()[$markt]['url'] ?? '');
+    if ($url === '' || $url === 'TODO') {
+        return null;
+    }
+    return rtrim($url, '/') . '/search/?q=' . rawurlencode($sku);
+}
+
+/**
+ * Das Fenster, aus dem der Referenzwert TATSÄCHLICH stammt — und das Intervall darin.
+ *
+ * **Der Unterschied ist keine Feinheit, sondern eine Falschangabe.** Läuft eine Aktion,
+ * ist die Referenz zum Aktionsbeginn eingefroren; sie stammt also aus dem Fenster VOR
+ * `promo_started`, nicht aus dem Fenster vor dem Stichtag. Wer den Beleg über das
+ * heutige Fenster berechnet, nennt im Nachweisdokument das falsche Intervall — bemerkt
+ * am 18.08.2026 an einem Prüfartikel: als Beleg für 79,95 € (Juni-Einbruch) erschien
+ * das laufende Aktionsintervall 21.07.–18.08.
+ *
+ * @return array{0: \DateTimeImmutable, 1: \DateTimeImmutable, 2: object|null, 3: string}
+ *         [von, bis, Beleg-Intervall, Bezugstag als Text]
+ */
+function beleg_fenster(
+    Grube\Price30\Calc\PriceWindow $fenster,
+    array $events,
+    ?Grube\Price30\Calc\Reference $ref,
+    \DateTimeImmutable $stichtag,
+): array {
+    $bezug = $stichtag;
+    $wort  = 'Stichtag';
+    if ($ref !== null && $ref->state->isPromo() && $ref->state->promoStarted !== null) {
+        $bezug = $ref->state->promoStarted;
+        $wort  = 'Aktionsbeginn';
+    }
+    [$von, $bis] = $fenster->bounds($bezug);
+    return [$von, $bis, $fenster->lowestIn($events, $von, $bis), $wort];
+}
+
+/**
  * Zustand eines Marktes — die Logik hinter den Statuszeichen.
  *
  * **„Nie gelaufen" ist kein Vorfall, sondern ein Einrichtungszustand.** Der vorherige
@@ -277,6 +368,7 @@ function seitenkopf(string $titel, string $aktiv = ''): void
   <nav aria-label="Bereiche">
     <a href="index.php"<?= $aktiv === 'index' ? ' aria-current="page"' : '' ?>>Übersicht</a>
     <a href="artikel.php"<?= $aktiv === 'artikel' ? ' aria-current="page"' : '' ?>>Artikel &amp; Nachweis</a>
+    <a href="konto.php"<?= $aktiv === 'konto' ? ' aria-current="page"' : '' ?>>Konto</a>
   </nav>
   <div class="chipzeile">
     <?php if ($trocken): ?>
@@ -286,7 +378,8 @@ function seitenkopf(string $titel, string $aktiv = ''): void
     <?php endif; ?>
     <span class="chip"><?= h(y5x_env()) ?></span>
     <span class="chip mono">Stand <?= date('d.m.Y · H:i') ?></span>
-    <span class="chip"><?= h(current_user()) ?></span>
+    <a class="chip" href="konto.php" style="text-decoration:none"><?= h(current_user()) ?></a>
+    <a class="chip" href="?abmelden=1" style="text-decoration:none">abmelden</a>
   </div>
 </header>
 <main>

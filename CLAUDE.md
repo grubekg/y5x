@@ -330,6 +330,49 @@ Quellenangabe erscheint nur im Druck, Navigation und Suche verschwinden.
 Fällt die Referenz unter die Vorstufe, erklärt ein Hinweiskasten den Grund — so vermittelt
 die Seite die Rechtslogik nebenbei jedem, der sie öffnet.
 
+### Bedienung (18.08.2026)
+
+* **Auswahlfelder feuern direkt ab** (`onchange`, eine Zeile, kein Framework). Ohne
+  JavaScript bleibt ein Absendeknopf sichtbar — die Seite funktioniert in jedem Fall.
+* **Die ganze Zeile der Artikelliste ist anklickbar.** Umgesetzt als über die Zeile
+  gespannter `::after`-Link in der ersten Zelle: Er bleibt ein echter Link — fokussierbar,
+  kopierbar, in neuem Tab zu öffnen —, während ein `onclick` auf `<tr>` all das verlöre.
+* **Auf der Nachweisseite gibt es keine Suche**, nur Stichtag, PDF und „zur Liste".
+* **Artikelname und Shop-Link** im Kopf. Der Link geht über die Shop-Suche
+  (`<url>/search/?q=<sku>`), weil die direkt auf die Produktseite mit vorgewähltem
+  Artikel umleitet (geprüft: `/search/?q=1000172720` →
+  `/p/erdbohrgeraet-vertex-g250/100017/?articleNo=1000172720#it`). Ein selbst gebauter
+  Produktpfad bräuchte Slug und Produkt-ID, die wir gar nicht führen, und wäre bei jeder
+  Umbenennung kaputt. Die Bezeichnung kommt aus `import:E0074` am Item und liegt in
+  `article_meta` — **Anzeigehilfe, nicht Beweisgrundlage**, deshalb eigene Tabelle mit
+  Abrufzeitpunkt.
+* **Abmelden** im Kopf (räumt Sitzung, Cookie und Sitzungs-ID ab), **Konto** als eigene
+  Seite: eigenes Passwort ändern, Zugänge anlegen und entfernen, Anmeldeprotokoll.
+
+### Der Nachweis als PDF
+
+„Drucken" ist ersetzt durch **Herunterladen**: Ein Browserausdruck hängt von Rändern,
+Zoom und Druckdialog des jeweiligen Rechners ab; ein Beweismittel soll bei jedem gleich
+aussehen und als Datei weitergegeben werden können.
+
+Erzeugt mit **mpdf** (reines PHP). Auf diesem Webspace gibt es weder wkhtmltopdf noch
+Chromium, und ein FPM-Prozess, der einen Browser startet, wäre für ein
+Compliance-Werkzeug die falsche Abhängigkeit. `composer install` ist damit ein
+Einrichtungsschritt; `deploy.sh` spiegelt `vendor/` mit.
+
+Das Diagramm geht als SVG ins PDF — dieselbe `Chart`-Klasse wie am Bildschirm, nur mit
+festen Farben statt CSS-Variablen. Geprüft an einem gerenderten PDF, nicht nur an der
+Dateigröße.
+
+> **Der Prüfdurchgang hat einen Fehler im Nachweis aufgedeckt.** Als Beleg für die
+> Referenz stand dort das *laufende* Aktionsintervall (21.07.–18.08.), obwohl der Wert
+> von 79,95 € aus einem Juni-Einbruch stammte. Ursache: Das Beleg-Fenster wurde zum
+> **Stichtag** berechnet statt zum **Aktionsbeginn** — bei eingefrorener Referenz sind das
+> verschiedene Zeiträume. `beleg_fenster()` löst das jetzt an einer Stelle für Bildschirm
+> und PDF; das schattierte Band im Diagramm zeigt seitdem denselben Zeitraum, aus dem die
+> Referenz tatsächlich stammt. In einem Beweisdokument war das keine Feinheit, sondern
+> eine Falschangabe.
+
 ### Anmeldung
 
 Generische Fehlermeldung (die Maske darf kein Kontoverzeichnis werden), Versuchssperre
@@ -341,6 +384,7 @@ hier ohne Belang, wichtig ist das Verfahren, nicht die Marke.
 ## Befehle
 
 ```bash
+composer install                             # einmalig: mpdf fuer den PDF-Nachweis
 bash deploy.sh staging                       # Code -> Laufzeit + Statusseite
 php bin/init-db.php --env staging            # Schema anlegen
 php bin/migrate.php --env staging            # Spalten in bestehenden Tabellen nachziehen
@@ -385,6 +429,14 @@ php bin/demo-seed.php [--loeschen]           # Beispieldaten (nur staging)
 7. **`prev_price_max_days` von Legal kalibrieren lassen** (Vorgabe 42 Tage). Ebenso:
    Ist `permanent_after_days: 60` größer als die längste tatsächlich geplante Aktion?
 8. Verzeichnisschutz für `status/` im ISPConfig-Panel; GitHub-Repo `grubekg/y5x` anlegen.
+
+## Was sich absichtlich NICHT bedienen lässt
+
+Es gibt keine Oberfläche, über die sich **Preisdaten** ändern ließen. `price_events` ist
+die Beweisgrundlage nach § 11 PAngV — wer nachträglich einen Preis ändern kann, kann
+jeden Nachweis erfinden. Korrekturen laufen über einen dokumentierten Lauf
+(`bin/run.php`) oder `backfill`, beides mit Spur im `run_log`. Änderbar ist nur, was die
+Bedienung betrifft: Passwort und Zugänge.
 
 ## Zugang zur Statusseite
 
