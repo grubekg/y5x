@@ -13,14 +13,19 @@
 # /search/?q=1000172720 -> /p/erdbohrgeraet-vertex-g250/100017/?articleNo=1000172720#it).
 # Das ist stabiler als ein selbst zusammengesetzter Produktpfad, der Slug und Produkt-ID
 # braeuchte, die wir gar nicht fuehren.
+# `price_group` = die Preisgruppe des anonymen Standardkunden in DIESEM Markt.
+# Ueberall `DEFAULT` — ausser in Schweden, wo sie `1` heisst (gemessen 18.08.2026 am
+# Sammelabzug: se fuehrt 5.167 Eintraege unter Gruppe 1 und keinen einzigen unter
+# DEFAULT). Das war kein Schoenheitsfehler: Der Markt blieb dadurch beim ersten Volllauf
+# vollstaendig leer, ohne dass irgendetwas nach Fehler aussah.
 markets:
-  DE: { currency: EUR, shop: TODO, url: "https://www.grube.de", url_staging: "https://integ.grube.de", write_enabled: true,  active: true }
-  AT: { currency: EUR, shop: TODO, url: TODO, write_enabled: true,  active: true }
-  FR: { currency: EUR, shop: TODO, url: TODO, write_enabled: true,  active: true }
-  PL: { currency: PLN, shop: TODO, url: TODO, write_enabled: true,  active: true }
-  SK: { currency: EUR, shop: TODO, url: TODO, write_enabled: true,  active: true }
-  SE: { currency: SEK, shop: TODO, url: TODO, write_enabled: true,  active: true }
-  DK: { currency: DKK, shop: TODO, url: TODO, write_enabled: true,  active: true }
+  DE: { currency: EUR, price_group: DEFAULT, shop: TODO, url: "https://www.grube.de", url_staging: "https://integ.grube.de", write_enabled: true,  active: true }
+  AT: { currency: EUR, price_group: DEFAULT, shop: TODO, url: TODO, write_enabled: true,  active: true }
+  FR: { currency: EUR, price_group: DEFAULT, shop: TODO, url: TODO, write_enabled: true,  active: true }
+  PL: { currency: PLN, price_group: DEFAULT, shop: TODO, url: TODO, write_enabled: true,  active: true }
+  SK: { currency: EUR, price_group: DEFAULT, shop: TODO, url: TODO, write_enabled: true,  active: true }
+  SE: { currency: SEK, price_group: "1", shop: TODO, url: TODO, write_enabled: true,  active: true }
+  DK: { currency: DKK, price_group: DEFAULT, shop: TODO, url: TODO, write_enabled: true,  active: true }
   # Die Schweizer Preisbekanntgabeverordnung folgt NICHT der EU-30-Tage-Logik.
   # Getrackt wird trotzdem, damit Historie vorliegt, wenn Legal entscheidet.
-  CH: { currency: CHF, shop: TODO, url: TODO, write_enabled: false, active: true }
+  CH: { currency: CHF, price_group: DEFAULT, shop: TODO, url: TODO, write_enabled: false, active: true }

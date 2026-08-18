@@ -117,7 +117,7 @@ final class IshopPriceAdapter
      * @param string[] $mcsListe  gesuchte MCS-Schlüssel
      * @return array<string, array<string, array{gross:string, net:string}>>  mcs => sku => Preise
      */
-    public function allePreise(array $mcsListe): array
+    public function allePreise(array $mcsListe, array $preisgruppen = []): array
     {
         $out = [];
         foreach ($mcsListe as $mcs) { $out[$mcs] = []; }
@@ -133,7 +133,7 @@ final class IshopPriceAdapter
                     'searchEntries[0].value'  => '',
                     'onlyValid' => 'true',
                 ], $datei, 900);
-                $this->zerlege($datei, $mcsListe, $feld, $out);
+                $this->zerlege($datei, $mcsListe, $feld, $out, $preisgruppen);
             } finally {
                 @\unlink($datei);
             }
@@ -151,7 +151,8 @@ final class IshopPriceAdapter
     }
 
     /** Streamend zerlegen — 191 MB je Datei passen nicht in den Arbeitsspeicher. */
-    private function zerlege(string $datei, array $mcsListe, string $feld, array &$out): void
+    private function zerlege(string $datei, array $mcsListe, string $feld, array &$out,
+                             array $preisgruppen = []): void
     {
         $fp = \fopen($datei, 'r');
         if ($fp === false) {
@@ -175,8 +176,12 @@ final class IshopPriceAdapter
                 }
                 \preg_match_all('~<td[^>]*>(.*?)</td>~s', $zeile, $c);
                 $wert = \html_entity_decode(\strip_tags($c[1][3] ?? ''));
+                // Die Preisgruppe des anonymen Standardkunden ist NICHT ueberall
+                // `DEFAULT`: In Schweden heisst sie `1`. Fest verdrahtet liess das den
+                // ganzen Markt leer durchlaufen, ohne dass etwas nach Fehler aussah.
+                $gruppe = $preisgruppen[$treffer] ?? 'DEFAULT';
                 foreach (\preg_split('~(?<=\}),\s*~', \trim($wert, "[] \n")) ?: [] as $eintrag) {
-                    if (!\str_contains($eintrag, "priceGroup='DEFAULT'")
+                    if (!\str_contains($eintrag, "priceGroup='" . $gruppe . "'")
                         || !\str_contains($eintrag, "customer='0'")
                         || !\str_contains($eintrag, 'amount=0,')) {
                         continue;

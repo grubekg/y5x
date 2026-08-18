@@ -341,6 +341,29 @@ Der Einzelabruf bleibt als Rückfall für einen einzelnen Artikel erhalten. 191 
 **streamend** verarbeitet werden — im Arbeitsspeicher gehalten stirbt `preg_match_all`
 bei 512 MB.
 
+### Die Preisgruppe ist nicht überall `DEFAULT`
+
+**Schweden führt sie als `1`.** Alle anderen Märkte nutzen `DEFAULT` — gemessen am
+Sammelabzug (Kunde 0, amount 0):
+
+```
+at DEFAULT=18.838   de DEFAULT=18.866   pl DEFAULT=11.701
+ch DEFAULT=16.003   dk DEFAULT=13.988   sk DEFAULT=8.871
+fr DEFAULT=18.866   se 1=5.167          (kein einziger DEFAULT-Eintrag)
+```
+
+Fest verdrahtet auf `DEFAULT` blieb der schwedische Markt beim ersten Volllauf
+**vollständig leer** — 3 Sekunden Laufzeit, Status „ok", null Artikel. Kein Fehler, kein
+Hinweis, nichts. Genau die Sorte Fehlschlag, an der man erst Monate später merkt, dass
+ein Markt nie versorgt wurde.
+
+Zwei Konsequenzen, und die zweite ist die wichtigere:
+
+1. `price_group` steht je Markt in `markets.yml` (Vorgabe `DEFAULT`, Schweden `1`).
+2. **Ein Markt ohne einen einzigen Preis ist ein Fehler**, kein leeres Sortiment. Der
+   Lauf zählt ihn als `errors`, meldet ihn im Klartext und endet mit `partial`. Eine
+   Zahl, die still auf null steht, ist schlimmer als eine Fehlermeldung.
+
 ### Die Ratenbegrenzung des Shops
 
 `/admin/rate-limiting/status` verrät sie: **800 Anfragen in 2 Minuten**, aktiv, ohne

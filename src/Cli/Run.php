@@ -49,11 +49,14 @@ final class Run
     public function sammelPreise(array $maerkte, bool $ausfuehrlich = false): array
     {
         $mcsListe = [];
+        $gruppen = [];
         foreach ($maerkte as $code => $waehrung) {
-            $mcsListe[] = $this->mcs($code, $waehrung);
+            $mcs = $this->mcs($code, $waehrung);
+            $mcsListe[] = $mcs;
+            $gruppen[$mcs] = (string) ($this->markets[$code]['price_group'] ?? 'DEFAULT');
         }
         $t = \microtime(true);
-        $d = $this->shop->allePreise($mcsListe);
+        $d = $this->shop->allePreise($mcsListe, $gruppen);
         if ($ausfuehrlich) {
             \printf("Sammelabzug: %d Märkte in %.0f s\n", \count($d), \microtime(true) - $t);
             foreach ($d as $mcs => $artikel) {
@@ -94,21 +97,35 @@ final class Run
         // einzelne Artikel, ist aber fuer einen Lauf ueber das Sortiment untauglich:
         // 35.641 Anfragen je Markt, und die anderen sieben Maerkte kaeme er gar nicht.
         $sammel = null;
+        $mcs = $this->mcs($markt, $waehrung);
+        $gruppe = (string) ($m['price_group'] ?? 'DEFAULT');
         if ($abruf && $sammelVorab !== null) {
-            $sammel = $sammelVorab[$this->mcs($markt, $waehrung)] ?? [];
+            $sammel = $sammelVorab[$mcs] ?? [];
         } elseif ($abruf) {
-            $mcs = $this->mcs($markt, $waehrung);
             try {
                 $t0 = \microtime(true);
-                $sammel = $this->shop->allePreise([$mcs])[$mcs] ?? [];
-                $this->melden(\sprintf('%s Preise fuer %s in %.0f s (Sammelabzug)',
-                    \number_format(\count($sammel), 0, ',', '.'), $mcs, \microtime(true) - $t0),
+                // Die Preisgruppe MUSS auch hier mit: Ohne sie lief der Einzelmarkt-Lauf
+                // fuer Schweden auf `DEFAULT` und fand nichts.
+                $sammel = $this->shop->allePreise([$mcs], [$mcs => $gruppe])[$mcs] ?? [];
+                $this->melden(\sprintf('%s Preise fuer %s (Gruppe %s) in %.0f s',
+                    \number_format(\count($sammel), 0, ',', '.'), $mcs, $gruppe, \microtime(true) - $t0),
                     $ausfuehrlich);
             } catch (\Throwable $e) {
                 $this->melden('Sammelabzug nicht moeglich (' . $e->getMessage()
                     . ') — es wird einzeln abgerufen', true);
                 $sammel = null;
             }
+        }
+
+        // Ein Markt ohne EINEN einzigen Preis ist kein leeres Sortiment, sondern ein
+        // Fehler. Beim ersten Volllauf blieb Schweden genau so still leer, weil dort die
+        // Preisgruppe `1` statt `DEFAULT` heisst — 3 Sekunden Laufzeit, Status „ok",
+        // null Artikel. Solche Laeufe duerfen nicht als Erfolg durchgehen.
+        if ($abruf && $sammel !== null && $sammel === []) {
+            $zaehler['fehler']++;
+            $this->melden(\sprintf(
+                'FEHLER %s: kein einziger Preis im Sammelabzug fuer %s (Gruppe %s) — '
+                . 'stimmt `price_group` in markets.yml?', $markt, $mcs, $gruppe), true);
         }
 
         if ($abruf) {
