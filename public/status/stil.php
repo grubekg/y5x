@@ -16,6 +16,24 @@ declare(strict_types=1);
  *   leuchtet, macht Rot an Tag 30 bedeutungslos — bei einem Compliance-Werkzeug ist
  *   Alarmmüdigkeit gefährlich.
  */
+/**
+ * Kopfzeilen-Angaben, die auf JEDER Seite gleich sein müssen.
+ *
+ * Das Sinnbild liegt als SVG vor, nicht als `.ico`: Es skaliert von 16 px bis zur
+ * Lesezeichenleiste ohne zweite Datei, und es lässt sich mit denselben Farbwerten
+ * pflegen wie der Rest. Der `.ico`-Rückfall bleibt für alte Browser eingetragen — falls
+ * die Datei fehlt, ist eine unbeantwortete Anfrage folgenlos.
+ */
+function y5x_kopfzeilen(): void
+{
+    ?>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="alternate icon" href="favicon.ico" sizes="any">
+<link rel="apple-touch-icon" href="favicon.svg">
+<meta name="theme-color" content="#14231b">
+    <?php
+}
+
 function y5x_stil(): void
 {
     ?>

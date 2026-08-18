@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img"
+     aria-label="Preisschreiber">
+  <!-- Preisschreiber — Favicon
+       Motiv: Die Preistreppe fällt, die eingefrorene Referenzlinie hält
+       das alte Niveau. Tanne/Papier/Gold aus dem Gestaltungssystem. -->
+  <rect width="64" height="64" rx="13" fill="#2e5240"/>
+  <path d="M29,20 H55" fill="none" stroke="#f2c14e" stroke-width="5"
+        stroke-dasharray="8 6" stroke-linecap="round"/>
+  <path d="M11,20 H27 V33 H43 V46 H55" fill="none" stroke="#f4f4f0"
+        stroke-width="7.5" stroke-linejoin="round" stroke-linecap="round"/>
+</svg>

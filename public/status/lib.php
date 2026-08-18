@@ -187,7 +187,7 @@ function zugangsseite(string $h1, string $inhalt, string $fehler = '', string $h
     ?><!doctype html><html lang="de"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Preisschreiber — <?= h($h1) ?></title>
-<?php y5x_stil(); ?>
+<?php y5x_kopfzeilen(); y5x_stil(); ?>
 <style>
  html,body{height:100%}
  body{display:grid;place-items:center;padding:1.2rem;font-size:15px}
@@ -508,7 +508,7 @@ function seitenkopf(string $titel, string $aktiv = ''): void
     ?><!doctype html><html lang="de"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Preisschreiber — <?= h($titel) ?></title>
-<?php y5x_stil(); ?>
+<?php y5x_kopfzeilen(); y5x_stil(); ?>
 </head><body>
 <header>
   <div class="kopfinhalt">
