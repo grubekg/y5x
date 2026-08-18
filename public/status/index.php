@@ -213,8 +213,14 @@ seitenkopf('Übersicht', 'index');
     $aktion  = (int) ($k['in_aktion'] ?? 0);
     $risiko  = (int) ($k['risiko'] ?? 0);
 ?>
-<tr>
-  <td><b><?= h($code) ?></b><span class="sub"><?= h((string) ($m['shop'] ?? '—')) ?> ·
+<!-- Ganze Zeile klickbar (siehe .zeilenlink im Stil): ein echter Link in der ersten
+     Zelle, per ::after ueber die Zeile gespannt. Bleibt fokussierbar und in neuem Tab zu
+     oeffnen — ein onclick auf <tr> koennte beides nicht. Die beiden Zahlen mit EIGENEM
+     Ziel (in Aktion, Risiko) liegen darueber und behalten ihren Link. -->
+<tr class="klickbar">
+  <td><a href="artikel.php?markt=<?= h($code) ?>" class="zeilenlink"
+         title="Alle Artikel in <?= h($code) ?> ansehen"><b><?= h($code) ?></b></a>
+      <span class="sub"><?= h((string) ($m['shop'] ?? '—')) ?> ·
       <?= h((string) ($m['currency'] ?? '')) ?></span></td>
   <td>
     <span class="status <?= h($z['klasse']) ?>"><?= h($z['wort']) ?></span>
@@ -231,13 +237,13 @@ seitenkopf('Übersicht', 'index');
       <?php else: ?>
         <span class="status aus">nur Beobachtung</span>
       <?php endif; ?></td>
-  <td class="zahl"><a href="artikel.php?markt=<?= h($code) ?>"><?= zahl($artikel) ?></a></td>
+  <td class="zahl"><?= zahl($artikel) ?></td>
   <td class="zahl"><a href="artikel.php?markt=<?= h($code) ?>&amp;filter=aktion"><?= zahl($aktion) ?></a>
       <span class="sub"><?= $artikel ? \number_format(100 * $aktion / $artikel, 1, ',', '.') . ' %' : '—' ?></span></td>
   <td class="zahl"><?= $risiko > 0
         ? '<a href="artikel.php?markt=' . h($code) . '&amp;filter=risiko" style="color:var(--vorfall);font-weight:700">' . zahl($risiko) . '</a>'
         : '0' ?></td>
-  <td class="zahl"><a href="artikel.php?markt=<?= h($code) ?>&amp;filter=unvollstaendig"><?= zahl((int) ($k['unvollstaendig'] ?? 0)) ?></a></td>
+  <td class="zahl"><?= zahl((int) ($k['unvollstaendig'] ?? 0)) ?></td>
   <td class="mono"><?= !empty($lauf['zuletzt_ok'])
         ? h(\date('d.m.Y H:i', \strtotime((string) $lauf['zuletzt_ok'])))
         : '—' ?><span class="sub"><?= h($z['detail']) ?></span></td>

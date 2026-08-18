@@ -353,7 +353,12 @@ die Seite die Rechtslogik nebenbei jedem, der sie öffnet.
 
 * **Auswahlfelder feuern direkt ab** (`onchange`, eine Zeile, kein Framework). Ohne
   JavaScript bleibt ein Absendeknopf sichtbar — die Seite funktioniert in jedem Fall.
-* **Die ganze Zeile der Artikelliste ist anklickbar.** Umgesetzt als über die Zeile
+* **Ganze Zeilen sind anklickbar** — in der Artikelliste und in der Markttabelle der
+  Übersicht (dort führt sie auf alle Artikel des Marktes). „Artikel" und „Fenster
+  unvollständig" tragen deshalb keinen eigenen Link mehr; **„in Aktion" und „Risiko"
+  behalten ihn**, weil sie auf eine *andere* Auswahl zeigen — ein eigener Link ist nur
+  dann berechtigt, wenn er woanders hinführt als die Zeile.
+* **Umsetzung der Zeilenklickbarkeit:** Umgesetzt als über die Zeile
   gespannter `::after`-Link in der ersten Zelle: Er bleibt ein echter Link — fokussierbar,
   kopierbar, in neuem Tab zu öffnen —, während ein `onclick` auf `<tr>` all das verlöre.
 * **Auf der Nachweisseite gibt es keine Suche**, nur Stichtag, PDF und „zur Liste".
