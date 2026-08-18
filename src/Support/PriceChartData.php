@@ -108,6 +108,11 @@ final class PriceChartData
                                           + (int) ($opts['prevMaxDays'] ?? 42) * 86400);
         }
 
+        // Ereignisse, die erst NACH dem Bezugstag beginnen, gehoeren nicht in den
+        // Schrieb: Ein Nachweis zum 10. Juli darf keine Augustpreise zeigen.
+        $events = \array_values(\array_filter($events,
+            static fn($e) => ($e['valid_from'] ?? '') <= $today));
+
         return [
             'events'        => $events,
             'refWrites'     => $refWrites,

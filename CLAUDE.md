@@ -277,21 +277,18 @@ Referenzwert.
 |---|---|---|
 | PSS (**schreibend**) | `integ.grube.de` ✅ | `admin.grube.app` |
 | Shop-Link im Nachweis | `integ.grube.de` ✅ | `www.grube.de` |
-| iSHOP (**lesend**) | ⚠️ `admin.grube.app` — **Produktion** | `admin.grube.app` |
+| iSHOP (**lesend**) | `integ.grube.de` ✅ | `admin.grube.app` |
 
-Die ersten beiden Zeilen sind sauber getrennt. Die dritte **nicht**, und das ist eine
-Inkonsistenz, keine Bequemlichkeit: Staging rechnet aus Produktionspreisen und schreibt
-das Ergebnis auf die Integ.
+**Seit dem 18.08.2026 sauber getrennt.** Zuvor las Staging den iSHOP aus der Produktion,
+weil `/admin/os/overview` auf der Integ mit **401** antwortete — die Kennung
+`seo-index-agent` gab es dort nicht. GRUBE hat sie angelegt; Integ liefert seitdem 34.866
+Artikel (Produktion 35.650, die Abweichung ist für eine Integrationsumgebung erwartbar).
 
-Der Grund ist kein Versäumnis, sondern eine fehlende Berechtigung: Der
-Object-Storage-Zugang (`/admin/os/overview`) antwortet auf der Integ mit **401** — die
-Kennung `seo-index-agent` gilt dort nicht. Der Preisendpunkt
-(`/admin/pssoverview/prices/shop/get/…`) funktioniert dagegen. **Solange die
-Object-Storage-Berechtigung auf der Integ fehlt, kann Staging seine Artikelliste nicht
-von dort holen.**
-
-Fürs Testen ist das tragbar (die Preise sind echt, nur die Herkunft ist die falsche
-Umgebung), für den Dauerbetrieb nicht. → TODO(setup) 9.
+> ⚠️ **Der Wechsel der Quelle verfälscht die Historie.** Der erste Lauf nach der Umstellung
+> meldete 27 „geänderte" Artikel — das sind Preisunterschiede zwischen Produktion und
+> Integ, keine echten Preisänderungen. In `price_events` stünden sie trotzdem als
+> Preisänderung. Wer die Quelle wechselt, muss die Historie verwerfen; sonst behauptet die
+> Beweisgrundlage einen Vorgang, den es nie gab.
 
 **Der Shop-Link folgt der Umgebung** (`url` / `url_staging` in `markets.yml`). Fehlt die
 Staging-Adresse, wird **nicht** auf die Produktivadresse ausgewichen — lieber kein Link
@@ -635,6 +632,32 @@ später den Slug, bleibt belegbar, welche Adresse zum Zeitpunkt des Nachweises g
 Der zweite Fall ist echt und wird **ehrlich vermerkt** statt mit einer erfundenen Adresse
 gefüllt.
 
+### Der Stichtag muss ALLES bewegen
+
+Gemeldet am 18.08.2026: Die Kennzahlen im Schrieb und das schattierte Band änderten sich
+nicht, wenn man einen anderen Stichtag einstellte. Stempel, Karten und Zustand folgten
+ihm — das Bild nicht.
+
+Ursache: Der Chart bekam den **aktuellen** Zustand aus der Datenbank und `heute`. Damit
+zeigte das Band immer das heutige Fenster und die Beschriftung immer den heutigen Wert,
+gleich welchen Stichtag man wählte. Auf einem Nachweis zu einem zurückliegenden Datum ist
+das keine Unschönheit, sondern eine Falschaussage.
+
+Behoben an drei Stellen:
+
+* Der Chart bekommt den **nachgerechneten Zustand zum Stichtag** (aus `Calc\Replay`),
+  nicht den aus `price_state`.
+* **Der Schrieb endet am Stichtag.** Ein Nachweis zum 10. Juli darf keine Augustpreise
+  ausweisen — weder als Kurve noch über eine Zeitachse, die weiterläuft.
+* Das **PDF nutzt denselben Renderer** wie der Bildschirm. Es zeichnete vorher über die
+  alte `Chart`-Klasse — zwei Zeichenwege für dasselbe Bild sind die sicherste Art, dass
+  Ausdruck und Anzeige irgendwann auseinanderlaufen.
+
+Dazu zwei Kleinigkeiten aus derselben Ecke: Die Zeitachse lief über den Stichtag hinaus
+(ein Intervall kann länger gelten als der Nachweis reicht), und der Begründungstext sagte
+„rollierendes Fenster [heute−30, gestern]" — bei einem zurückliegenden Stichtag ist
+„heute" schlicht das falsche Wort.
+
 ### Der Nachweis als PDF
 
 „Drucken" ist ersetzt durch **Herunterladen**: Ein Browserausdruck hängt von Rändern,
@@ -767,9 +790,10 @@ php bin/demo-seed.php [--loeschen]           # Beispieldaten (nur staging)
 7. **`prev_price_max_days` von Legal kalibrieren lassen** (Vorgabe 42 Tage). Ebenso:
    Ist `permanent_after_days: 60` größer als die längste tatsächlich geplante Aktion?
 8. Verzeichnisschutz für `status/` im ISPConfig-Panel; GitHub-Repo `grubekg/y5x` anlegen.
-9. **Object-Storage-Berechtigung auf der Integ** (`/admin/os/overview` antwortet dort mit
-   401). Ohne sie liest Staging seine Artikelliste weiter aus der Produktion — siehe
-   „Umgebungstrennung".
+9. ~~Object-Storage-Berechtigung auf der Integ~~ — **erledigt am 18.08.2026** (GRUBE hat
+   `seo-index-agent` dort angelegt). Staging liest jetzt vollständig von der Integ.
+   Offen bleibt: **die in Staging vorhandene Preishistorie stammt aus der Produktion und
+   sollte vor dem nächsten Lauf verworfen werden** — siehe Warnung oben.
 
 ## Was sich absichtlich NICHT bedienen lässt
 

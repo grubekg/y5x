@@ -214,9 +214,14 @@ else:
     // Nachgerechnete Referenz-Treppe: Solange nichts geschrieben wird (Trockenmodus),
     // ist `pss_write_log` leer und das Diagramm hätte keine Referenzlinie. Also wird sie
     // Tag für Tag nachgerechnet — und im Schrieb ausdrücklich als „berechnet" ausgewiesen.
+    // **Der Schrieb endet am Stichtag.** Vorher lief er immer bis heute, und damit
+    // zeigten Band, Referenzlinie und Beschriftung stets den heutigen Stand — egal
+    // welchen Stichtag man einstellte. Ein Nachweis zum 10. Juli darf keine Augustpreise
+    // ausweisen; alles im Bild soll das sein, was an jenem Tag galt.
     $refReihe = []; $prevReihe = []; $prevOffen = null; $letzteRef = null;
     $ersterTag = $events[0]->validFrom;
-    $letzterTag = $heute > $stich ? $heute : $stich;
+    $letzterTag = $stich;
+    if ($letzterTag < $ersterTag) { $letzterTag = $ersterTag; }
     for ($t = $ersterTag; $t <= $letzterTag; $t = $t->modify('+1 day')) {
         $r = $replay->until($events, $t, $waehrung);
         if ($r === null) { continue; }
@@ -319,8 +324,16 @@ vor dem <b><?= h($fWort) ?></b> (<?= datum($fVon->format('Y-m-d')) ?>–<?= datu
 also genau der Zeitraum, aus dem die ausgewiesene Referenz stammt.</p>
 <div class="schrieb">
 <?php
-    $eingabe = PriceChartData::build($zeilen, $writeLogRoh, $zustand ?? [],
-        $heute->format('Y-m-d'), [
+    // Der Zustand, wie er AM STICHTAG galt — nicht der heutige aus der Datenbank.
+    // Daraus leitet PriceChartData das schattierte Fenster ab: bei laufender Aktion das
+    // Fenster vor dem Aktionsbeginn, sonst das rollierende vor dem Stichtag.
+    $zustandAmStichtag = [
+        'mode'              => $ref?->state->mode ?? 'normal',
+        'promo_started'     => $ref?->state->promoStarted?->format('Y-m-d'),
+        'last_reduction_at' => $ref?->state->lastReductionAt?->format('Y-m-d'),
+    ];
+    $eingabe = PriceChartData::build($zeilen, $writeLogRoh, $zustandAmStichtag,
+        $stichtag, [
             'marker'       => ['date' => $stichtag, 'label' => 'Stichtag'],
             'windowDays'   => $tage,
             'prevMaxDays'  => (int) ($app['prev_price_max_days'] ?? 42),

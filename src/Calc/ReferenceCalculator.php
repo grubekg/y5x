@@ -121,7 +121,7 @@ final class ReferenceCalculator
             $tiefstes = $this->window->lowestBefore($events, $heute);
             return new Reference($tiefstes?->net, $tiefstes?->gross, $currency,
                 new PromoState(), $vollstaendig,
-                'rollierendes Fenster [heute−30, gestern]',
+                'rollierendes Fenster (die 30 Tage vor dem Bezugstag)',
                 null, null, 'PREV im Modus rolling nicht definiert');
         }
 
@@ -142,7 +142,7 @@ final class ReferenceCalculator
         return new Reference($tiefstes?->net, $tiefstes?->gross, $currency, $neu, $vollstaendig,
             $neu->isPromo()
                 ? 'Aktion ohne Vorgeschichte — rollierendes Fenster als Rückfall'
-                : 'rollierendes Fenster [heute−30, gestern]',
+                : 'rollierendes Fenster (die 30 Tage vor dem Bezugstag)',
             $prevNet, $prevGross, $prevGrund);
     }
 }

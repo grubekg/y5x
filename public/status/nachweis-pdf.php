@@ -23,7 +23,8 @@ use Grube\Price30\Calc\PriceWindow;
 use Grube\Price30\Calc\PromoStateMachine;
 use Grube\Price30\Calc\ReferenceCalculator;
 use Grube\Price30\Calc\Replay;
-use Grube\Price30\Support\Chart;
+use Grube\Price30\Support\PriceChart;
+use Grube\Price30\Support\PriceChartData;
 
 $sku      = \trim((string) ($_GET['sku'] ?? ''));
 $markt    = \trim((string) ($_GET['markt'] ?? 'DE'));
@@ -65,26 +66,50 @@ $name = artikelname($sku, $markt);
 $shop = produkt_url($sku, $markt);
 $link = $shop['url'];
 
-// Diagramm und Aktionsphasen — dieselbe Rechnung wie auf dem Bildschirm.
-$reihe = []; $aktionen = []; $offen = null;
+// Diagramm — **derselbe Renderer wie am Bildschirm**. Zwei Zeichenwege fuer dasselbe
+// Bild waeren die sicherste Art, dass Ausdruck und Anzeige irgendwann auseinanderlaufen;
+// bei einem Beweisdokument ist genau das die Eigenschaft, die man nicht haben will.
+$refReihe = []; $prevReihe = []; $prevOffen = null; $letzteRef = null;
 $ersterTag = $events[0]->validFrom;
-$letzterTag = $heute > $stich ? $heute : $stich;
+$letzterTag = $stich < $ersterTag ? $ersterTag : $stich;
 for ($t = $ersterTag; $t <= $letzterTag; $t = $t->modify('+1 day')) {
-    $e = $replay->priceOn($events, $t);
-    $reihe[] = ['date' => $t->format('Y-m-d'), 'gross' => $e?->gross];
-    $imPromo = (bool) $replay->until($events, $t, $waehrung)?->state->isPromo();
-    if ($imPromo && $offen === null) { $offen = $t->format('Y-m-d'); }
-    if (!$imPromo && $offen !== null) { $aktionen[] = ['from' => $offen, 'to' => $t->format('Y-m-d')]; $offen = null; }
+    $r = $replay->until($events, $t, $waehrung);
+    if ($r === null) { continue; }
+    $d = $t->format('Y-m-d');
+    if ($r->gross !== null && ($letzteRef === null || (float) $letzteRef !== (float) $r->gross)) {
+        $refReihe[] = ['date' => $d, 'value' => (float) $r->gross];
+        $letzteRef = $r->gross;
+    }
+    if ($r->hasPrev()) {
+        if ($prevOffen === null) {
+            $prevOffen = ['from' => $d, 'to' => null, 'value' => (float) $r->prevGross];
+        }
+    } elseif ($prevOffen !== null) {
+        $prevOffen['to'] = $t->modify('-1 day')->format('Y-m-d');
+        $prevReihe[] = $prevOffen;
+        $prevOffen = null;
+    }
 }
-if ($offen !== null) { $aktionen[] = ['from' => $offen, 'to' => \end($reihe)['date']]; }
+if ($prevOffen !== null) { $prevReihe[] = $prevOffen; }
 
-$svg = (new Chart(760, 240))->render($reihe,
-    $fensterTage !== [] ? ['from' => $fensterTage[0]['date'],
-                           'to' => $fensterTage[\count($fensterTage) - 1]['date']] : null,
-    $ref?->gross, $aktionen, $stichtag, $ref?->prevGross);
-// Keine Farbersetzung mehr noetig: Das SVG traegt seine Darstellung selbst (siehe
-// Support\Chart). Vorher standen die Farben im Stylesheet der Seite und mussten hier
-// per strtr nachgereicht werden — in jedem anderen Renderer fehlte die Preistreppe.
+$zeilenRoh = \array_map(static fn($z) => [
+    'gross' => $z['gross'], 'net' => $z['net'],
+    'valid_from' => $z['valid_from'], 'valid_to' => $z['valid_to']], $zeilen);
+$writeLogRoh = db()->query(
+    'SELECT * FROM {p}pss_write_log WHERE sku = ? AND market = ? ORDER BY id', [$sku, $markt]);
+$zustandAmStichtag = [
+    'mode'              => $ref?->state->mode ?? 'normal',
+    'promo_started'     => $ref?->state->promoStarted?->format('Y-m-d'),
+    'last_reduction_at' => $ref?->state->lastReductionAt?->format('Y-m-d'),
+];
+$svg = PriceChart::ohneCssVariablen(PriceChart::render(
+    PriceChartData::build($zeilenRoh, $writeLogRoh, $zustandAmStichtag, $stichtag, [
+        'marker'       => ['date' => $stichtag, 'label' => 'Stichtag'],
+        'windowDays'   => $tage,
+        'prevMaxDays'  => (int) ($app['prev_price_max_days'] ?? 42),
+        'refWrites'    => $refReihe,
+        'prevSegments' => $prevReihe,
+    ])));
 
 $belegt = \count(\array_filter($fensterTage, static fn($t) => $t['gross'] !== null));
 

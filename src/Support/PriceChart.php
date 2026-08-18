@@ -47,6 +47,10 @@ final class PriceChart
         $t0 = $events[0]['valid_from'];
         $t1 = $today;
         foreach ($events as $e) { $t1 = \max($t1, $e['valid_to'] ?? $today); }
+        // Nie ueber den Bezugstag hinaus: Ein Intervall kann laenger gelten, als der
+        // Nachweis reicht — die Zeitachse eines Nachweises zum 1. Mai darf trotzdem
+        // nicht bis in den Juni laufen.
+        if ($t1 > $today) { $t1 = $today; }
         foreach (($cfg['refWrites'] ?? []) as $w) { $t0 = \min($t0, $w['date']); $t1 = \max($t1, $w['date']); }
         if (!empty($cfg['marker']['date'])) {
             $t0 = \min($t0, $cfg['marker']['date']); $t1 = \max($t1, $cfg['marker']['date']);
@@ -161,7 +165,10 @@ final class PriceChart
             $s[] = '<path d="' . $d . '" fill="none" stroke="var(--referenz,#a8231b)" '
                  . 'stroke-width="1.8" stroke-dasharray="6 4"/>';
             $lastRef = (float) \end($writes)['value'];
-            $refLabelY = $y($lastRef) - 6;
+            // UNTER die Linie: Ueber ihr stehen die Stufenbeschriftungen des
+            // Verkaufspreises, und zwei sich ueberdruckende Zahlen sind auf einem
+            // Beweisdokument schlimmer als eine ungewohnte Position.
+            $refLabelY = $y($lastRef) + 14;
         }
 
         // --- Vorstufen-Anker ----------------------------------------------
