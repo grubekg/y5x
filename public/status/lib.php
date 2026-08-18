@@ -329,6 +329,32 @@ function markt_shopadresse(string $markt): string
 }
 
 /**
+ * Link auf die Preisanzeige des PSS für diesen Artikel.
+ *
+ * Bewusst **aus `PSS_BASE_URL` abgeleitet** und nicht als eigener Eintrag gepflegt: Das
+ * ist genau die Adresse, auf die dieser Lauf auch schreibt. Zwei getrennt gepflegte
+ * Angaben liefen früher oder später auseinander, und dann zeigte der Nachweis auf eine
+ * andere Umgebung, als er beschreibt.
+ *
+ *   staging -> https://integ.grube.de/admin/pss/api/v2_beta/prices?skus=…
+ *   prod    -> https://admin.grube.app/admin/pss/api/v2_beta/prices?skus=…
+ *
+ * Die Anzeige verlangt dieselbe Anmeldung wie die Schnittstelle — der Browser fragt beim
+ * Öffnen danach.
+ */
+function pss_link(string $sku): ?string
+{
+    static $basis = null;
+    if ($basis === null) {
+        $basis = (new Grube\Price30\Support\Env(y5x_runtime() . '/.env'))->get('PSS_BASE_URL');
+    }
+    if ($basis === '') {
+        return null;
+    }
+    return \rtrim($basis, '/') . '?skus=' . \rawurlencode($sku);
+}
+
+/**
  * Die **kanonische** Produkt-URL des Artikels — aufgelöst, nicht konstruiert.
  *
  * **Warum nicht der Suchlink:** Eine Abmahnung nennt eine Adresse. `…/search/?q=<sku>`

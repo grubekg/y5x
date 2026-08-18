@@ -270,12 +270,19 @@ else:
     <?= (maerkte()[$markt]['write_enabled'] ?? false)
         ? ($trocken ? '<span class="status aus">Trockenmodus</span>' : '<span class="status ok">Schreiben aktiv</span>')
         : '<span class="status aus">nur Beobachtung</span>' ?>
-    <?php if ($link !== null): ?>
-      <a href="<?= h($link) ?>" target="_blank" rel="noopener" class="shoplink"
-         title="<?= h($link) ?>">im Shop ansehen ↗</a>
-    <?php else: ?>
-      <span class="shoplink" style="color:var(--neutral)"><?= h($shop['hinweis']) ?></span>
-    <?php endif; ?>
+    <span class="shoplink">
+      <?php if ($link !== null): ?>
+        <a href="<?= h($link) ?>" target="_blank" rel="noopener"
+           title="<?= h($link) ?>">im Shop ansehen ↗</a>
+      <?php else: ?>
+        <span style="color:var(--neutral)"><?= h($shop['hinweis']) ?></span>
+      <?php endif; ?>
+      <?php if (($pssLink = pss_link($sku)) !== null): ?>
+        <span class="trenner">·</span>
+        <a href="<?= h($pssLink) ?>" target="_blank" rel="noopener"
+           title="Preiseinträge dieses Artikels im PSS (<?= h(\parse_url($pssLink, \PHP_URL_HOST) ?? '') ?>) — verlangt dieselbe Anmeldung wie die Schnittstelle">im PSS ansehen ↗</a>
+      <?php endif; ?>
+    </span>
   </div>
   <!-- Zweite Zeile, linksbündig: Bezeichnung samt Variante (Farbe, Größe) steht vorn,
        dahinter Markt, Währung und der heute verlangte Preis. Die Variante ist Teil des

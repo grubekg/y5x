@@ -458,6 +458,14 @@ die Seite die Rechtslogik nebenbei jedem, der sie öffnet.
 * In der Wertetafel stehen Etikett und Betrag auf **einer** Zeile, die Erläuterung bricht
   darunter um (Raster statt Flex — vorher schob langer Erklärtext den Betrag weg).
 * **Kein Menüpunkt „Konto"** — die E-Mail-Adresse im Kopf ist der Zugang.
+* **Zwei Links im Kopf.** „Im Shop ansehen" führt auf die Produktseite, „im PSS ansehen"
+  auf die Preiseinträge desselben Artikels
+  (`…/admin/pss/api/v2_beta/prices?skus=<sku>`). Der PSS-Link wird **aus `PSS_BASE_URL`
+  abgeleitet**, also aus genau der Adresse, auf die derselbe Lauf schreibt — zwei
+  getrennt gepflegte Angaben liefen früher oder später auseinander, und dann zeigte der
+  Nachweis auf eine andere Umgebung, als er beschreibt. Er steht bewusst **nicht im
+  PDF**: Das ist ein Beweisdokument für Dritte, und ein Zugangspfad in ein internes
+  System hat darin nichts zu suchen.
 * **Artikelname und Shop-Link** im Kopf. Der Link geht über die Shop-Suche
   (`<url>/search/?q=<sku>`), weil die direkt auf die Produktseite mit vorgewähltem
   Artikel umleitet (geprüft: `/search/?q=1000172720` →
