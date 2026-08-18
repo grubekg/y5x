@@ -258,20 +258,66 @@ function artikelname(string $sku, string $markt): ?string
 }
 
 /**
- * Link auf den Artikel im Shop.
+ * Die **kanonische** Produkt-URL des Artikels — aufgelöst, nicht konstruiert.
  *
- * Über die Shop-Suche statt über einen selbst gebauten Produktpfad: `/search/?q=<sku>`
- * leitet direkt auf die Produktseite mit vorgewähltem Artikel um (geprüft 18.08.2026).
- * Ein selbst zusammengesetzter Pfad bräuchte Slug und Produkt-ID, die wir gar nicht
- * führen — und wäre bei jeder Umbenennung kaputt.
+ * **Warum nicht der Suchlink:** Eine Abmahnung nennt eine Adresse. `…/search/?q=<sku>`
+ * ist funktional und landet richtig, ist aber nicht die URL, unter der geworben wurde —
+ * auf einem Nachweisdokument gehört die echte hin (Hinweis GRUBE, 18.08.2026).
+ *
+ * **Warum nicht selbst gebaut:** Dafür bräuchte es Slug und Produkt-ID. Die Produkt-ID
+ * ließe sich zwar aus den ersten sechs Stellen der Artikelnummer ableiten (geprüft an
+ * drei Artikeln), der Slug steht aber in keinem lesbaren Attribut des Produktobjekts.
+ * Eine aus einem Zahlenmuster geratene Adresse hat auf einem Beweisdokument ohnehin
+ * nichts verloren.
+ *
+ * **Also: der Shop sagt es selbst.** Ein Aufruf der Shop-Suche folgt der Weiterleitung;
+ * die Zieladresse IST die kanonische URL. Sie wird mit Zeitstempel festgehalten — ändert
+ * der Shop später den Slug, bleibt belegbar, welche Adresse zum Zeitpunkt des Nachweises
+ * galt. Bleibt die Weiterleitung aus (der Artikel hat keine Produktseite, gemessen an
+ * 1000344342), wird das ehrlich vermerkt statt eine Adresse zu erfinden.
+ *
+ * @return array{url: ?string, geprueft: ?string, hinweis: string}
  */
-function shoplink(string $sku, string $markt): ?string
+function produkt_url(string $sku, string $markt): array
 {
-    $url = (string) (maerkte()[$markt]['url'] ?? '');
-    if ($url === '' || $url === 'TODO') {
-        return null;
+    $z = db()->one('SELECT url, url_checked_at FROM {p}article_meta WHERE sku = ? AND market = ?',
+        [$sku, $markt]);
+    if ($z !== null && $z['url_checked_at'] !== null) {
+        return ['url' => $z['url'], 'geprueft' => $z['url_checked_at'],
+                'hinweis' => $z['url'] === null ? 'keine Produktseite im Shop' : ''];
     }
-    return rtrim($url, '/') . '/search/?q=' . rawurlencode($sku);
+
+    $basis = (string) (maerkte()[$markt]['url'] ?? '');
+    if ($basis === '' || $basis === 'TODO') {
+        return ['url' => null, 'geprueft' => null,
+                'hinweis' => 'Shop-Adresse für ' . $markt . ' ist in markets.yml nicht gesetzt'];
+    }
+
+    $ziel = null;
+    $ch = \curl_init(\rtrim($basis, '/') . '/search/?q=' . \rawurlencode($sku));
+    \curl_setopt_array($ch, [
+        \CURLOPT_RETURNTRANSFER => true, \CURLOPT_FOLLOWLOCATION => true,
+        \CURLOPT_TIMEOUT => 20, \CURLOPT_NOBODY => false,
+        \CURLOPT_USERAGENT => 'y5x-Preisnachweis (interne Belegpruefung)',
+    ]);
+    \curl_exec($ch);
+    $effektiv = (string) \curl_getinfo($ch, \CURLINFO_EFFECTIVE_URL);
+    $status = (int) \curl_getinfo($ch, \CURLINFO_HTTP_CODE);
+    \curl_close($ch);
+
+    // Nur eine echte Produktseite zaehlt. Bleibt die Suche stehen, gibt es keine.
+    if ($status === 200 && \str_contains($effektiv, '/p/')) {
+        $ziel = \strtok($effektiv, '#') ?: $effektiv;
+    }
+
+    db()->execute(
+        'INSERT INTO {p}article_meta (sku, market, url, url_checked_at, fetched_at)
+         VALUES (?,?,?,NOW(),NOW())
+         ON DUPLICATE KEY UPDATE url = VALUES(url), url_checked_at = NOW()',
+        [$sku, $markt, $ziel]);
+
+    return ['url' => $ziel, 'geprueft' => \date('Y-m-d H:i:s'),
+            'hinweis' => $ziel === null ? 'keine Produktseite im Shop' : ''];
 }
 
 /**
@@ -368,7 +414,6 @@ function seitenkopf(string $titel, string $aktiv = ''): void
   <nav aria-label="Bereiche">
     <a href="index.php"<?= $aktiv === 'index' ? ' aria-current="page"' : '' ?>>Übersicht</a>
     <a href="artikel.php"<?= $aktiv === 'artikel' ? ' aria-current="page"' : '' ?>>Artikel &amp; Nachweis</a>
-    <a href="konto.php"<?= $aktiv === 'konto' ? ' aria-current="page"' : '' ?>>Konto</a>
   </nav>
   <div class="chipzeile">
     <?php if ($trocken): ?>
@@ -378,7 +423,9 @@ function seitenkopf(string $titel, string $aktiv = ''): void
     <?php endif; ?>
     <span class="chip"><?= h(y5x_env()) ?></span>
     <span class="chip mono">Stand <?= date('d.m.Y · H:i') ?></span>
-    <a class="chip" href="konto.php" style="text-decoration:none"><?= h(current_user()) ?></a>
+    <a class="chip" href="konto.php" style="text-decoration:none"
+       title="Konto: Passwort ändern, Zugänge verwalten"
+       <?= $aktiv === 'konto' ? 'aria-current="page" style="text-decoration:none;background:rgba(255,255,255,.16)"' : '' ?>><?= h(current_user()) ?></a>
     <a class="chip" href="?abmelden=1" style="text-decoration:none">abmelden</a>
   </div>
 </header>

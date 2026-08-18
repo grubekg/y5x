@@ -115,9 +115,13 @@ CREATE TABLE IF NOT EXISTS {{P}}login_log (
 
 -- Artikelbezeichnung (Anzeigehilfe, nicht Beweisgrundlage).
 CREATE TABLE IF NOT EXISTS {{P}}article_meta (
-  sku        VARCHAR(64)  NOT NULL,
-  market     CHAR(2)      NOT NULL,
-  name       VARCHAR(255) NULL,
-  fetched_at DATETIME     NOT NULL,
+  sku            VARCHAR(64)   NOT NULL,
+  market         CHAR(2)       NOT NULL,
+  name           VARCHAR(255)  NULL,
+  -- Die kanonische Produkt-URL, wie der Shop sie selbst aufloest. Eine Abmahnung nennt
+  -- eine Adresse; ein Suchlink waere funktional, aber nicht die beworbene URL.
+  url            VARCHAR(1024) NULL,
+  url_checked_at DATETIME      NULL,
+  fetched_at     DATETIME      NOT NULL,
   PRIMARY KEY (sku, market)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

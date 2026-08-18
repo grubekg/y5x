@@ -338,6 +338,13 @@ die Seite die Rechtslogik nebenbei jedem, der sie öffnet.
   gespannter `::after`-Link in der ersten Zelle: Er bleibt ein echter Link — fokussierbar,
   kopierbar, in neuem Tab zu öffnen —, während ein `onclick` auf `<tr>` all das verlöre.
 * **Auf der Nachweisseite gibt es keine Suche**, nur Stichtag, PDF und „zur Liste".
+* **Kopfzeile zweizeilig:** oben Artikelnummer, Zustandszeichen und Shop-Link; darunter
+  linksbündig die **Bezeichnung samt Variante** („T-Shirt Hunting, oliv, Gr. XXL" —
+  `import:E0074` führt sie mit), dann Markt, Währung und der heute verlangte Preis. Ohne
+  die Variante wäre auf einem Nachweis nicht bestimmbar, welcher Artikel gemeint ist.
+* In der Wertetafel stehen Etikett und Betrag auf **einer** Zeile, die Erläuterung bricht
+  darunter um (Raster statt Flex — vorher schob langer Erklärtext den Betrag weg).
+* **Kein Menüpunkt „Konto"** — die E-Mail-Adresse im Kopf ist der Zugang.
 * **Artikelname und Shop-Link** im Kopf. Der Link geht über die Shop-Suche
   (`<url>/search/?q=<sku>`), weil die direkt auf die Produktseite mit vorgewähltem
   Artikel umleitet (geprüft: `/search/?q=1000172720` →
@@ -348,6 +355,52 @@ die Seite die Rechtslogik nebenbei jedem, der sie öffnet.
   Abrufzeitpunkt.
 * **Abmelden** im Kopf (räumt Sitzung, Cookie und Sitzungs-ID ab), **Konto** als eigene
   Seite: eigenes Passwort ändern, Zugänge anlegen und entfernen, Anmeldeprotokoll.
+
+### Der Messschrieb: gelieferter Renderer (18.08.2026)
+
+`Support\PriceChart` und `Support\PriceChartData` kamen **fertig von GRUBE**, samt
+21 Prüfungen. Übernommen mit vier dokumentierten Eingriffen (siehe Klassenkopf):
+Namensraum, `ohneCssVariablen()` fürs PDF, `usort` auf Kopien — und einer echten
+Fehlerbehebung:
+
+> **`static $prev` in einem Closure überlebt den Aufruf.** Im Dedup der Referenzschritte
+> hätte das beim zweiten `render()` im selben Request den ersten Schritt des zweiten
+> Diagramms verschluckt. Bei einem Diagramm je Seite fällt es nie auf — auf der
+> Demoseite mit drei Fällen sofort, und in einem Beweisdokument wäre es ein stiller
+> Fehler.
+
+Dazu drei Beschriftungen, die aus dem Bild liefen (Stichtag am rechten Rand,
+Fensterlabel, und Referenz/Vorstufe übereinander, wenn die Werte nah beieinander liegen)
+— jetzt am Rand umgeschlagen bzw. auseinandergezogen.
+
+**Die Referenz-Treppe stammt laut Entwurf aus `pss_write_log` — der ist im Trockenmodus
+leer.** Es gäbe also nie eine Referenzlinie, obwohl der Wert längst berechnet ist.
+`build()` nimmt deshalb über `refWrites`/`prevSegments` auch eine **nachgerechnete**
+Reihe entgegen; sie wird im Schrieb als „Referenz (berechnet)" beschriftet und in der
+Legende als „berechnet, noch nicht geschrieben". Auf keinem Ausdruck darf der Eindruck
+entstehen, ein Wert sei übertragen worden, der es nicht wurde.
+
+### Die Produkt-URL wird aufgelöst, nicht gebaut
+
+**Eine Abmahnung nennt eine Adresse** (Hinweis GRUBE, 18.08.2026). Der Suchlink
+`…/search/?q=<sku>` ist funktional, aber nicht die URL, unter der geworben wurde.
+
+Selbst bauen ginge nicht sauber: Die Produkt-ID ließe sich aus den ersten sechs Stellen
+der Artikelnummer ableiten (an drei Artikeln geprüft), der **Slug** steht aber in keinem
+lesbaren Attribut des Produktobjekts. Eine aus einem Zahlenmuster geratene Adresse hat
+auf einem Beweisdokument nichts verloren.
+
+Also sagt es der Shop selbst: Ein Aufruf der Suche folgt der Weiterleitung, das Ziel
+**ist** die kanonische URL. Sie steht mit Zeitstempel in `article_meta` — ändert der Shop
+später den Slug, bleibt belegbar, welche Adresse zum Zeitpunkt des Nachweises galt.
+
+```
+1000172720 -> https://www.grube.de/p/erdbohrgeraet-vertex-g250/100017/?articleNo=1000172720
+1000344342 -> keine Produktseite im Shop
+```
+
+Der zweite Fall ist echt und wird **ehrlich vermerkt** statt mit einer erfundenen Adresse
+gefüllt.
 
 ### Der Nachweis als PDF
 

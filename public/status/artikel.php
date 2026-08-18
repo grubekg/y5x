@@ -22,7 +22,8 @@ use Grube\Price30\Calc\PriceWindow;
 use Grube\Price30\Calc\PromoStateMachine;
 use Grube\Price30\Calc\ReferenceCalculator;
 use Grube\Price30\Calc\Replay;
-use Grube\Price30\Support\Chart;
+use Grube\Price30\Support\PriceChart;
+use Grube\Price30\Support\PriceChartData;
 use Grube\Price30\Support\Money;
 
 $app      = cfg('app');
@@ -196,20 +197,34 @@ else:
     [$fVon, $fBis, $quelle, $fWort] = beleg_fenster($fenster, $events, $ref, $stich);
     $fensterTage = $replay->windowDays($events, $fBis->modify('+1 day'), $tage);
     $zustand = db()->one('SELECT * FROM {p}price_state WHERE sku = ? AND market = ?', [$sku, $markt]);
+    $writeLogRoh = db()->query(
+        'SELECT * FROM {p}pss_write_log WHERE sku = ? AND market = ? ORDER BY id', [$sku, $markt]);
 
-    // Aktionszeiträume für das Diagramm — nachgerechnet, nicht gespeichert.
+    // Nachgerechnete Referenz-Treppe: Solange nichts geschrieben wird (Trockenmodus),
+    // ist `pss_write_log` leer und das Diagramm hätte keine Referenzlinie. Also wird sie
+    // Tag für Tag nachgerechnet — und im Schrieb ausdrücklich als „berechnet" ausgewiesen.
+    $refReihe = []; $prevReihe = []; $prevOffen = null; $letzteRef = null;
     $ersterTag = $events[0]->validFrom;
     $letzterTag = $heute > $stich ? $heute : $stich;
-    $reihe = [];
-    $aktionen = []; $offen = null;
     for ($t = $ersterTag; $t <= $letzterTag; $t = $t->modify('+1 day')) {
-        $e = $replay->priceOn($events, $t);
-        $reihe[] = ['date' => $t->format('Y-m-d'), 'gross' => $e?->gross];
-        $imPromo = (bool) $replay->until($events, $t, $waehrung)?->state->isPromo();
-        if ($imPromo && $offen === null) { $offen = $t->format('Y-m-d'); }
-        if (!$imPromo && $offen !== null) { $aktionen[] = ['from' => $offen, 'to' => $t->format('Y-m-d')]; $offen = null; }
+        $r = $replay->until($events, $t, $waehrung);
+        if ($r === null) { continue; }
+        $d = $t->format('Y-m-d');
+        if ($r->gross !== null && ($letzteRef === null || !Money::equals($letzteRef, $r->gross))) {
+            $refReihe[] = ['date' => $d, 'value' => (float) $r->gross];
+            $letzteRef = $r->gross;
+        }
+        if ($r->hasPrev()) {
+            if ($prevOffen === null) {
+                $prevOffen = ['from' => $d, 'to' => null, 'value' => (float) $r->prevGross];
+            }
+        } elseif ($prevOffen !== null) {
+            $prevOffen['to'] = $t->modify('-1 day')->format('Y-m-d');
+            $prevReihe[] = $prevOffen;
+            $prevOffen = null;
+        }
     }
-    if ($offen !== null) { $aktionen[] = ['from' => $offen, 'to' => \end($reihe)['date']]; }
+    if ($prevOffen !== null) { $prevReihe[] = $prevOffen; }
 
     // Der Fall, der die Rechtslogik erklärt: Referenz unter der Vorstufe.
     $delle = $ref !== null && $ref->hasValue() && $ref->hasPrev()
@@ -228,27 +243,46 @@ else:
 
 <?php
     $name = artikelname($sku, $markt);
-    $link = shoplink($sku, $markt);
+    $shop = produkt_url($sku, $markt);
+    $link = $shop['url'];
 ?>
 <div class="artikelkopf">
-  <span class="sku"><?= h($sku) ?></span>
-  <?php if ($name !== null): ?><span style="font-size:1.02rem"><?= h($name) ?></span><?php endif; ?>
+  <div class="kopfzeile1">
+    <span class="sku"><?= h($sku) ?></span>
+    <?php if ($jetzt?->state->isPromo()): ?>
+      <span class="status aktion">Aktion seit <?= datum($jetzt->state->promoStarted?->format('Y-m-d')) ?>
+        — Tag <?= (int) $jetzt->state->promoStarted?->diff($heute)->days + 1 ?></span>
+    <?php else: ?><span class="status ok">ohne Aktion</span><?php endif; ?>
+    <?= $jetzt?->windowComplete
+        ? '<span class="status ok">Fenster vollständig</span>'
+        : '<span class="status warn">Fenster unvollständig</span>' ?>
+    <?= (maerkte()[$markt]['write_enabled'] ?? false)
+        ? ($trocken ? '<span class="status aus">Trockenmodus</span>' : '<span class="status ok">Schreiben aktiv</span>')
+        : '<span class="status aus">nur Beobachtung</span>' ?>
+    <?php if ($link !== null): ?>
+      <a href="<?= h($link) ?>" target="_blank" rel="noopener" class="shoplink"
+         title="<?= h($link) ?>">im Shop ansehen ↗</a>
+    <?php else: ?>
+      <span class="shoplink" style="color:var(--neutral)"><?= h($shop['hinweis']) ?></span>
+    <?php endif; ?>
+  </div>
+  <!-- Zweite Zeile, linksbündig: Bezeichnung samt Variante (Farbe, Größe) steht vorn,
+       dahinter Markt, Währung und der heute verlangte Preis. Die Variante ist Teil des
+       Artikelnamens im Shop (`import:E0074`, z. B. „T-Shirt Hunting, oliv, Gr. XXL") —
+       ohne sie wäre auf einem Nachweis nicht bestimmbar, welcher Artikel gemeint ist. -->
+  <div class="kopfzeile2">
+    <?php if ($name !== null): ?><b class="bezeichnung"><?= h($name) ?></b><?php
+      else: ?><span class="ohnename">Bezeichnung nicht abrufbar</span><?php endif; ?>
+    <span class="trenner">·</span>Markt <?= h($markt) ?>
+    <span class="trenner">·</span><?= h($waehrung) ?>
+    <span class="trenner">·</span>Verkaufspreis heute
+    <b class="mono"><?= geld($replay->priceOn($events, $heute)?->gross, $waehrung) ?></b>
+  </div>
   <?php if ($link !== null): ?>
-    <a href="<?= h($link) ?>" target="_blank" rel="noopener"
-       style="font-size:.85rem">im Shop ansehen ↗</a>
+  <div class="kopfzeile2"><span class="mono" style="word-break:break-all"><?= h($link) ?></span>
+    <span class="trenner">·</span>Adresse geprüft am
+    <?= h(\date('d.m.Y', \strtotime((string) $shop['geprueft']))) ?></div>
   <?php endif; ?>
-  <?php if ($jetzt?->state->isPromo()): ?>
-    <span class="status aktion">Aktion seit <?= datum($jetzt->state->promoStarted?->format('Y-m-d')) ?>
-      — Tag <?= (int) $jetzt->state->promoStarted?->diff($heute)->days + 1 ?></span>
-  <?php else: ?><span class="status ok">ohne Aktion</span><?php endif; ?>
-  <?= $jetzt?->windowComplete
-      ? '<span class="status ok">Fenster vollständig</span>'
-      : '<span class="status warn">Fenster unvollständig</span>' ?>
-  <?= (maerkte()[$markt]['write_enabled'] ?? false)
-      ? ($trocken ? '<span class="status aus">Trockenmodus</span>' : '<span class="status ok">Schreiben aktiv</span>')
-      : '<span class="status aus">nur Beobachtung</span>' ?>
-  <span class="meta">Markt <?= h($markt) ?> · <?= h($waehrung) ?> ·
-    Verkaufspreis heute <b class="mono"><?= geld($replay->priceOn($events, $heute)?->gross, $waehrung) ?></b></span>
 </div>
 
 <?php if ($delle): ?>
@@ -266,16 +300,23 @@ else:
 vor dem <b><?= h($fWort) ?></b> (<?= datum($fVon->format('Y-m-d')) ?>–<?= datum($fBis->format('Y-m-d')) ?>) —
 also genau der Zeitraum, aus dem die ausgewiesene Referenz stammt.</p>
 <div class="schrieb">
-<?= (new Chart())->render($reihe,
-      $fensterTage !== [] ? ['from' => $fensterTage[0]['date'],
-                             'to' => $fensterTage[\count($fensterTage) - 1]['date']] : null,
-      $ref?->gross, $aktionen, $stichtag, $ref?->prevGross) ?>
+<?php
+    $eingabe = PriceChartData::build($zeilen, $writeLogRoh, $zustand ?? [],
+        $heute->format('Y-m-d'), [
+            'marker'       => ['date' => $stichtag, 'label' => 'Stichtag'],
+            'windowDays'   => $tage,
+            'prevMaxDays'  => (int) ($app['prev_price_max_days'] ?? 42),
+            'refWrites'    => $refReihe,
+            'prevSegments' => $prevReihe,
+        ]);
+    echo PriceChart::render($eingabe);
+?>
 <div class="legende">
   <span class="l-preis"><i></i>Verkaufspreis brutto (amount 0)</span>
-  <span class="l-ref"><i></i>Referenz 30_GROSS</span>
-  <?php if ($ref?->hasPrev()): ?><span class="l-prev"><i></i>Vorstufen-Anker PREV_GROSS</span><?php endif; ?>
+  <span class="l-ref"><i></i>Referenz 30_GROSS<?= ($eingabe['refLabel'] ?? '') === 'Referenz (berechnet)' ? ' (berechnet, noch nicht geschrieben)' : '' ?></span>
+  <?php if (($eingabe['prevSegments'] ?? []) !== []): ?><span class="l-prev"><i></i>Vorstufen-Anker PREV_GROSS</span><?php endif; ?>
   <span class="l-fenster"><i></i><?= $tage ?>-Tage-Fenster</span>
-  <?php if ($aktionen !== []): ?><span class="l-aktion"><i></i>Aktionsphase</span><?php endif; ?>
+  <?php if (($eingabe['promoBands'] ?? []) !== []): ?><span class="l-aktion"><i></i>Aktionsphase</span><?php endif; ?>
 </div>
 </div>
 <p class="fussnote">Als Treppe gezeichnet, nicht als Kurve: Ein Preis gilt über sein
@@ -286,19 +327,27 @@ also genau der Zeitraum, aus dem die ausgewiesene Referenz stammt.</p>
 <div class="raster">
   <div class="karte">
     <h3>Referenzwerte<?= $trocken ? ' (simuliert)' : ' im PSS' ?></h3>
-    <div class="etikett"><span class="typ">30_GROSS</span>
-      <span><span class="wert"><?= geld($ref?->gross, $waehrung) ?></span>
-        <span class="sub"><?= h($ref?->origin ?? '—') ?></span></span></div>
-    <div class="etikett"><span class="typ">30_NET</span>
-      <span><span class="wert"><?= geld($ref?->net, $waehrung, 4) ?></span>
-        <span class="sub">gleiches Ereignis wie 30_GROSS (Konsistenzregel)</span></span></div>
+    <div class="etikett">
+      <span class="typ">30_GROSS</span>
+      <span class="wert"><?= geld($ref?->gross, $waehrung) ?></span>
+      <span class="sub"><?= h($ref?->origin ?? '—') ?></span>
+    </div>
+    <div class="etikett">
+      <span class="typ">30_NET</span>
+      <span class="wert"><?= geld($ref?->net, $waehrung, 4) ?></span>
+      <span class="sub">gleiches Ereignis wie 30_GROSS (Konsistenzregel)</span>
+    </div>
     <?php if ($app['prev_price_enabled'] ?? false): ?>
-    <div class="etikett"><span class="typ">PREV_GROSS</span>
-      <span><span class="wert"><?= $ref?->hasPrev() ? geld($ref->prevGross, $waehrung) : '—' ?></span>
-        <span class="sub"><?= h($ref?->prevOrigin ?? '') ?></span></span></div>
-    <div class="etikett"><span class="typ">PREV_NET</span>
-      <span><span class="wert"><?= $ref?->hasPrev() ? geld($ref->prevNet, $waehrung, 4) : '—' ?></span>
-        <span class="sub"><?= $ref?->hasPrev() ? 'gleiches Ereignis wie PREV_GROSS' : 'Anker geleert' ?></span></span></div>
+    <div class="etikett">
+      <span class="typ">PREV_GROSS</span>
+      <span class="wert"><?= $ref?->hasPrev() ? geld($ref->prevGross, $waehrung) : '—' ?></span>
+      <span class="sub"><?= h($ref?->prevOrigin ?? '') ?></span>
+    </div>
+    <div class="etikett">
+      <span class="typ">PREV_NET</span>
+      <span class="wert"><?= $ref?->hasPrev() ? geld($ref->prevNet, $waehrung, 4) : '—' ?></span>
+      <span class="sub"><?= $ref?->hasPrev() ? 'gleiches Ereignis wie PREV_GROSS' : 'Anker geleert' ?></span>
+    </div>
     <?php endif; ?>
   </div>
 

@@ -140,16 +140,26 @@ a:focus-visible,input:focus-visible,select:focus-visible,.knopf:focus-visible,bu
   {outline:2px solid var(--tanne-hell);outline-offset:2px}
 
 .artikelkopf{background:var(--karte);border:1px solid var(--linie);border-radius:8px;
-             padding:.85rem 1rem;display:flex;gap:1rem;flex-wrap:wrap;align-items:baseline}
+             padding:.85rem 1rem;display:flex;flex-direction:column;gap:.45rem}
+.artikelkopf .kopfzeile1{display:flex;gap:.7rem;flex-wrap:wrap;align-items:center}
+.artikelkopf .kopfzeile2{display:flex;gap:.45rem;flex-wrap:wrap;align-items:baseline;
+             color:var(--neutral);font-size:.9rem}
 .artikelkopf .sku{font:700 1.25rem/1.2 var(--mono)}
-.artikelkopf .meta{color:var(--neutral);font-size:.85rem;margin-left:auto;text-align:right}
+.artikelkopf .bezeichnung{color:var(--tinte);font-size:1rem}
+.artikelkopf .ohnename{font-style:italic}
+.artikelkopf .trenner{color:var(--linie-stark)}
+.artikelkopf .shoplink{font-size:.85rem;margin-left:auto}
 .hinweiskasten{border:1px solid var(--linie);border-left:4px solid var(--warn);
   background:var(--karte);border-radius:8px;padding:.65rem .9rem;margin:.7rem 0;color:#3c3c36}
 .hinweiskasten b{color:var(--warn)}
 .hinweiskasten.ruhig{border-left-color:var(--tanne-hell)} .hinweiskasten.ruhig b{color:var(--tanne-hell)}
 
 .schrieb{background:var(--karte);border:1px solid var(--linie);border-radius:8px;padding:.9rem 1rem}
-.schrieb svg{width:100%;height:auto;display:block}
+/* Auf schmalen Geraeten wuerde ein 900x260-Diagramm auf ~100 px Hoehe zusammenfallen —
+   ein Jahresverlauf ist darin nicht mehr lesbar. Die Mindesthoehe verhindert das; das
+   Seitenverhaeltnis bleibt durch preserveAspectRatio erhalten. */
+.schrieb svg{width:100%;height:auto;min-height:240px;display:block}
+@media (max-width:640px){.schrieb svg{min-height:300px}}
 .legende{display:flex;gap:1.1rem;flex-wrap:wrap;font-size:.8rem;color:var(--neutral);margin-top:.5rem}
 .legende i{display:inline-block;width:1.5rem;height:0;border-top:3px solid;margin-right:.35rem;
            vertical-align:middle}
@@ -162,12 +172,18 @@ a:focus-visible,input:focus-visible,select:focus-visible,.knopf:focus-visible,bu
 .raster{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:.7rem}
 .karte{background:var(--karte);border:1px solid var(--linie);border-radius:8px;padding:.75rem .9rem}
 .karte h3{margin:0 0 .5rem;font-size:.78rem;letter-spacing:.12em;text-transform:uppercase;color:var(--neutral)}
-.etikett{display:flex;justify-content:space-between;align-items:baseline;
-         border-top:1px dashed var(--linie);padding:.4rem 0;gap:.6rem}
+/* Bezeichnung und Betrag stehen auf EINER Zeile, die Erläuterung bricht darunter um.
+   Vorher lag die Erläuterung rechtsbündig neben dem Betrag und schob ihn bei längerem
+   Text weg — auf schmalen Fenstern stapelte alles untereinander. Ein Raster hält den
+   Betrag zuverlässig auf Höhe seines Etiketts. */
+.etikett{display:grid;grid-template-columns:1fr auto;gap:.1rem .8rem;align-items:baseline;
+         border-top:1px dashed var(--linie);padding:.45rem 0}
 .etikett:first-of-type{border-top:0}
 .etikett .typ{font-family:var(--mono);font-size:.82rem;color:var(--neutral)}
-.etikett .wert{font:600 1.15rem/1 var(--mono);font-variant-numeric:tabular-nums}
-.etikett .sub{font-size:.75rem;color:var(--neutral);display:block;text-align:right}
+.etikett .wert{font:600 1.15rem/1.1 var(--mono);font-variant-numeric:tabular-nums;
+               text-align:right;white-space:nowrap}
+.etikett .sub{grid-column:1/-1;font-size:.75rem;color:var(--neutral);text-align:left;
+              line-height:1.35}
 .zustand dt{font-size:.78rem;color:var(--neutral)}
 .zustand dd{margin:0 0 .45rem;font-family:var(--mono)}
 

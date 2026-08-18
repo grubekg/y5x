@@ -62,7 +62,8 @@ $preis  = $replay->priceOn($events, $stich);
 [$fVon, $fBis, $quelle, $fWort] = beleg_fenster($fenster, $events, $ref, $stich);
 $fensterTage = $replay->windowDays($events, $fBis->modify('+1 day'), $tage);
 $name = artikelname($sku, $markt);
-$link = shoplink($sku, $markt);
+$shop = produkt_url($sku, $markt);
+$link = $shop['url'];
 
 // Diagramm und Aktionsphasen — dieselbe Rechnung wie auf dem Bildschirm.
 $reihe = []; $aktionen = []; $offen = null;
@@ -81,21 +82,9 @@ $svg = (new Chart(760, 240))->render($reihe,
     $fensterTage !== [] ? ['from' => $fensterTage[0]['date'],
                            'to' => $fensterTage[\count($fensterTage) - 1]['date']] : null,
     $ref?->gross, $aktionen, $stichtag, $ref?->prevGross);
-// mpdf kennt die CSS-Variablen der Seite nicht — die Linienfarben werden fest gesetzt.
-$svg = \strtr($svg, [
-    'class="fenster"' => 'fill="#2e5240" opacity="0.10"',
-    'class="aktion"'  => 'fill="#c46a00" opacity="0.18"',
-    'class="linie"'   => 'fill="none" stroke="#1d3a2b" stroke-width="2.4"',
-    'class="referenz"'=> 'stroke="#a8231b" stroke-width="1.6" stroke-dasharray="6 4"',
-    'class="prev"'    => 'stroke="#6d4a9e" stroke-width="1.8" stroke-dasharray="2 5"',
-    'class="stichtag"'=> 'stroke="#2f6b3a" stroke-width="1.4" stroke-dasharray="3 3"',
-    'class="raster"'  => 'stroke="#e8e8e2"',
-    'class="achse"'   => 'font-size="9" fill="#777"',
-    'class="mini ref"'=> 'font-size="9" fill="#a8231b"',
-    'class="mini pv"' => 'font-size="9" fill="#6d4a9e"',
-    'class="mini"'    => 'font-size="9" fill="#666"',
-    'class="verlauf"' => '',
-]);
+// Keine Farbersetzung mehr noetig: Das SVG traegt seine Darstellung selbst (siehe
+// Support\Chart). Vorher standen die Farben im Stylesheet der Seite und mussten hier
+// per strtr nachgereicht werden — in jedem anderen Renderer fehlte die Preistreppe.
 
 $belegt = \count(\array_filter($fensterTage, static fn($t) => $t['gross'] !== null));
 
@@ -127,7 +116,9 @@ $belegt = \count(\array_filter($fensterTage, static fn($t) => $t['gross'] !== nu
      Fenster <?= $tage ?> Tage</p>
   <p>Quelle: Preisintervalle (<i>price_events</i>) und Schreibprotokoll (<i>pss_write_log</i>).
      Der Referenzwert ist aus den Intervallen <b>nachgerechnet</b>, nicht nachgeschlagen.
-     <?php if ($link !== null): ?>Artikel im Shop: <?= h($link) ?><?php endif; ?></p>
+     <?php if ($link !== null): ?><br>Produktseite im Shop: <?= h($link) ?>
+     (Adresse geprüft am <?= h(\date('d.m.Y', \strtotime((string) $shop['geprueft']))) ?>)<?php
+     else: ?><br>Produktseite: <?= h($shop['hinweis']) ?><?php endif; ?></p>
 </div>
 
 <div class="stempel">
