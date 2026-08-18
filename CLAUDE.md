@@ -1,6 +1,9 @@
-# y5x — 30-Tage-Bestpreis-Tracker
+# y5x — Preisschreiber
 
-**Kürzel:** `y5x` · **Klarname:** 30-Tage-Bestpreis-Tracker · **Typ:** php (CLI-Cron + Statusseite)
+**Kürzel:** `y5x` · **Klarname:** Preisschreiber · **Typ:** php (CLI-Cron + Statusseite)
+Im Briefing hieß er *30-Tage-Bestpreis-Tracker* (`price30-tracker`); umbenannt am
+18.08.2026 auf **Preisschreiber**. Die Herkunftsangabe bleibt hier stehen, damit der
+Zusammenhang zwischen Briefing und Werkzeug auffindbar ist.
 **Branch-Regeln:** `main` → prod, `develop` → staging · **Repo:** github.com/grubekg/y5x
 **Tabellen:** `y5x_prod_*` / `y5x_stg_*` · **URL:** grube.tools/y5x/status/ (staging: /staging/y5x/status/)
 
@@ -407,7 +410,7 @@ mit rund 500/min darüber und kam durch — worauf man sich nicht verlassen soll
 Das wiegt hier schwerer als anderswo: Die ausgehende IP `176.9.21.74` gehört dem **ganzen
 Webspace**. Eine Sperre träfe nicht nur dieses Werkzeug, sondern jedes andere Projekt am
 selben Shop. Deshalb `requests_per_minute: 330` in `app.yml` und ein eigener User-Agent
-(`y5x-Bestpreis-Tracker`), damit unser Verkehr im Protokoll des Shops erkennbar ist.
+(`y5x-Preisschreiber`), damit unser Verkehr im Protokoll des Shops erkennbar ist.
 
 Mit dem Sammelabzug ist die Frage praktisch erledigt — es bleiben zwei große Anfragen
 statt Zehntausender kleiner.
@@ -742,6 +745,20 @@ nach 5 Fehlversuchen je Konto+IP für 15 Minuten, `session_regenerate_id(true)` 
 und **jeder** Versuch im `login_log` mit Zeit, Konto und IP. Gehasht wird mit
 `PASSWORD_DEFAULT` (derzeit bcrypt); das Template nannte argon2id — der Unterschied ist
 hier ohne Belang, wichtig ist das Verfahren, nicht die Marke.
+
+## Gezielter Nachlauf für einen Artikel
+
+```bash
+php bin/run.php --market DE --sku 3049187041 [--write]
+```
+
+Der Einzelartikel-Lauf umgeht den Sammelabzug und nutzt den Einzel-Endpunkt: **3 s statt
+115 s**. 382 MB zu laden und zu zerlegen lohnt für einen Artikel nicht.
+
+**Nur für den Standard-Shop.** `/admin/pssoverview/prices/shop/get/…` kennt keinen
+Markt-Parameter; für AT, FR, PL, SK, SE, DK und CH bleibt auch bei einem einzelnen
+Artikel der Sammelweg der einzige. Das steht als `$standardMarkt` im Code, nicht als
+stille Annahme.
 
 ## Befehle
 

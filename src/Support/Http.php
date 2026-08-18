@@ -39,7 +39,7 @@ final class Http
          * des Shops nicht von irgendetwas anderem zu unterscheiden. Wer eine fremde
          * Schnittstelle in Anspruch nimmt, sollte erkennbar sein.
          */
-        private readonly string $userAgent = 'y5x-Bestpreis-Tracker (+grube.tools)',
+        private readonly string $userAgent = 'y5x-Preisschreiber (+grube.tools)',
     ) {
     }
 

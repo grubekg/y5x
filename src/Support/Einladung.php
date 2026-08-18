@@ -84,15 +84,15 @@ final class Einladung
      */
     public static function versenden(string $email, string $link, string $vonWem, string $env): bool
     {
-        $betreff = 'Zugang zum Bestpreis-Tracker (Preisnachweis § 11 PAngV)';
+        $betreff = 'Zugang zum Preisschreiber (Preisnachweis § 11 PAngV)';
         $text = "Hallo,\n\n"
-              . "$vonWem hat Ihnen einen Zugang zum Bestpreis-Tracker eingerichtet.\n\n"
+              . "$vonWem hat Ihnen einen Zugang zum Preisschreiber eingerichtet.\n\n"
               . "Passwort selbst vergeben:\n$link\n\n"
               . "Der Link gilt " . self::GUELTIG_TAGE . " Tage und lässt sich nur einmal verwenden.\n"
               . "Ihr Passwort kennt danach niemand außer Ihnen — auch keine Administration.\n\n"
               . "Umgebung: $env\n"
               . "Falls Sie damit nichts anfangen können, ignorieren Sie diese Nachricht bitte.\n";
-        $kopf = "From: Bestpreis-Tracker <webmaster@grube.tools>\r\n"
+        $kopf = "From: Preisschreiber <webmaster@grube.tools>\r\n"
               . "Reply-To: $vonWem\r\n"
               . "Content-Type: text/plain; charset=UTF-8\r\n"
               . "X-Mailer: y5x";

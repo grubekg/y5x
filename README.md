@@ -1,4 +1,4 @@
-# y5x — 30-Tage-Bestpreis-Tracker
+# y5x — Preisschreiber
 
 Taegliches Tracking der Shop-Verkaufspreise je Markt und Schreiben des niedrigsten
 Preises der letzten 30 Tage als `30_NET` / `30_GROSS` in den PSS (§ 11 PAngV).

@@ -66,6 +66,22 @@ final class Run
         return $d;
     }
 
+    /** Auf einen einzelnen Artikel eingrenzen — fuer gezielte Nachlaeufe. */
+    public function nurSku(?string $sku): void
+    {
+        $this->nurSku = $sku;
+    }
+
+    private ?string $nurSku = null;
+
+    /**
+     * Der Markt, den der Einzel-Endpunkt bedient.
+     *
+     * `/admin/pssoverview/prices/shop/get/…` kennt keinen Markt-Parameter und antwortet
+     * immer fuer den Standard-Shop. Nur fuer den darf der schnelle Weg benutzt werden.
+     */
+    public string $standardMarkt = 'DE';
+
     public function fuerMarkt(string $markt, int $limit, bool $ausfuehrlich = false,
                              bool $abruf = true, ?array $sammelVorab = null): array
     {
@@ -99,7 +115,14 @@ final class Run
         $sammel = null;
         $mcs = $this->mcs($markt, $waehrung);
         $gruppe = (string) ($m['price_group'] ?? 'DEFAULT');
-        if ($abruf && $sammelVorab !== null) {
+        // Fuer einen einzelnen Artikel lohnt der Sammelabzug nicht: 382 MB laden und
+        // zerlegen kostet zwei Minuten, der Einzel-Endpunkt eine Zehntelsekunde. Er
+        // liefert allerdings nur den Standard-Shop — fuer andere Maerkte bleibt der
+        // Sammelweg auch bei einem Artikel der einzige.
+        $einzelweg = $this->nurSku !== null && $markt === ($this->standardMarkt ?? 'DE');
+        if ($abruf && $einzelweg) {
+            $sammel = null;
+        } elseif ($abruf && $sammelVorab !== null) {
             $sammel = $sammelVorab[$mcs] ?? [];
         } elseif ($abruf) {
             try {
@@ -121,7 +144,7 @@ final class Run
         // Fehler. Beim ersten Volllauf blieb Schweden genau so still leer, weil dort die
         // Preisgruppe `1` statt `DEFAULT` heisst — 3 Sekunden Laufzeit, Status „ok",
         // null Artikel. Solche Laeufe duerfen nicht als Erfolg durchgehen.
-        if ($abruf && $sammel !== null && $sammel === []) {
+        if ($abruf && !$einzelweg && $sammel !== null && $sammel === []) {
             $zaehler['fehler']++;
             $this->melden(\sprintf(
                 'FEHLER %s: kein einziger Preis im Sammelabzug fuer %s (Gruppe %s) — '
@@ -131,6 +154,12 @@ final class Run
         if ($abruf) {
             $skus = $this->shop->skus($limit);
             $this->melden(\sprintf('%d Artikelnummern aus dem Object Storage', \count($skus)), $ausfuehrlich);
+        }
+        if ($this->nurSku !== null) {
+            // Auf einen Artikel eingrenzen — ohne den Sammelabzug zu umgehen, damit der
+            // Nachlauf genau dasselbe rechnet wie der Tageslauf.
+            $skus = [$this->nurSku];
+            $this->melden('eingegrenzt auf Artikel ' . $this->nurSku, $ausfuehrlich);
         } else {
             // Ohne Abruf: nur rechnen und schreiben, auf dem vorhandenen Bestand. Nuetzlich
             // fuer eine Wiederholung nach einem Schreibfehler, ohne den Shop zu belasten.

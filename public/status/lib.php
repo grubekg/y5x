@@ -186,7 +186,7 @@ function zugangsseite(string $h1, string $inhalt, string $fehler = '', string $h
     $env = y5x_env();
     ?><!doctype html><html lang="de"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Bestpreis-Tracker — <?= h($h1) ?></title>
+<title>Preisschreiber — <?= h($h1) ?></title>
 <?php y5x_stil(); ?>
 <style>
  html,body{height:100%}
@@ -243,7 +243,7 @@ function zugangsseite(string $h1, string $inhalt, string $fehler = '', string $h
   </svg>
 </div>
 <div class="buehne">
-  <p class="marke-gross"><b>Bestpreis-Tracker</b>
+  <p class="marke-gross"><b>Preisschreiber</b>
     <small>Preisnachweis · § 11 PAngV · GRUBE KG</small></p>
   <div class="zugang">
     <div class="kopfzeile">
@@ -507,12 +507,12 @@ function seitenkopf(string $titel, string $aktiv = ''): void
     $trocken = (bool) ($app['dry_run'] ?? true);
     ?><!doctype html><html lang="de"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Bestpreis-Tracker — <?= h($titel) ?></title>
+<title>Preisschreiber — <?= h($titel) ?></title>
 <?php y5x_stil(); ?>
 </head><body>
 <header>
   <div class="kopfinhalt">
-  <div class="marke">Bestpreis-Tracker<small>Preisnachweis · § 11 PAngV</small></div>
+  <div class="marke">Preisschreiber<small>Preisnachweis · § 11 PAngV</small></div>
   <nav aria-label="Bereiche">
     <a href="index.php"<?= $aktiv === 'index' ? ' aria-current="page"' : '' ?>>Übersicht</a>
     <a href="artikel.php"<?= $aktiv === 'artikel' ? ' aria-current="page"' : '' ?>>Artikel &amp; Nachweis</a>

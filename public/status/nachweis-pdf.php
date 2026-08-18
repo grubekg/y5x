@@ -221,7 +221,7 @@ if (!\is_dir($tmp)) { @\mkdir($tmp, 0770, true); }
 $pdf = new \Mpdf\Mpdf(['tempDir' => $tmp, 'format' => 'A4',
     'margin_top' => 14, 'margin_bottom' => 16, 'margin_left' => 14, 'margin_right' => 14]);
 $pdf->SetTitle("Preisnachweis $sku $markt " . datum($stichtag));
-$pdf->SetAuthor('Bestpreis-Tracker · GRUBE KG');
+$pdf->SetAuthor('Preisschreiber · GRUBE KG');
 // Fusszeile als Tabelle, nicht mit `float`: mpdf setzt Floats in Kopf-/Fusszeilen nicht
 // zuverlaessig um — im ersten Versuch klebte „11:13Seite 1 von 1" zusammen.
 $pdf->SetHTMLFooter(

@@ -1,4 +1,4 @@
--- y5x — 30-Tage-Bestpreis-Tracker
+-- y5x — Preisschreiber
 --
 -- {{P}} wird beim Anlegen durch y5x_prod_ bzw. y5x_stg_ ersetzt. Auf diesem Webspace
 -- teilen sich ALLE Projekte und BEIDE Umgebungen eine einzige MySQL-Datenbank; getrennt

@@ -5,7 +5,8 @@ declare(strict_types=1);
 /**
  * Tageslauf.
  *
- *   php bin/run.php [--market DE] [--limit N] [--quiet] [--ohne-abruf] [--write]
+ *   php bin/run.php [--market DE|--alle] [--limit N] [--sku NR] [--quiet]
+ *                   [--ohne-abruf] [--write]
  *
  * `--write` schaltet fuer diesen Lauf scharf; ohne den Schalter gilt `dry_run` aus
  * `app.yml`. `--ohne-abruf` rechnet und schreibt auf dem vorhandenen Bestand, ohne den
@@ -35,6 +36,7 @@ $app = \yaml_parse_file($laufzeit . '/config/app.yml') ?: [];
 $markets = (\yaml_parse_file($laufzeit . '/config/markets.yml') ?: [])['markets'] ?? [];
 
 $markt = (string) $opt('market', 'DE');
+$nurSku = $opt('sku', null);
 $limit = (int) ($opt('limit', '1000'));
 $laut  = !\in_array('--quiet', $argv, true);
 $abruf = !\in_array('--ohne-abruf', $argv, true);
@@ -49,6 +51,7 @@ $http = new Http($env->get('ISHOP_BASE_URL'), $env->get('ISHOP_USER'), $env->get
 $pss = new PssPriceAdapter(new Http($env->get('PSS_BASE_URL'), $env->get('PSS_USER'),
     $env->get('PSS_PASS')), (int) ($app['max_write_retries'] ?? 3));
 $run = new Run($db, new IshopPriceAdapter($http), $app, $markets, $pss);
+if ($nurSku !== null && $nurSku !== '') { $run->nurSku((string) $nurSku); }
 
 $start = \microtime(true);
 // --alle: sämtliche aktiven Märkte, mit EINEM gemeinsamen Sammelabzug.
