@@ -89,6 +89,120 @@ final class IshopPriceAdapter
     }
 
     /**
+     * **Alle Preise aller Märkte in zwei Anfragen** statt einer je Artikel.
+     *
+     * Der Einzelweg (`/admin/pssoverview/prices/shop/get/…`) fragt je Artikel und kennt
+     * **keinen Markt-Parameter** — er liefert nur den Standard-Shop. Für acht Märkte war
+     * er damit nicht bloß langsam, sondern untauglich.
+     *
+     * Der Object Storage führt die Preise dagegen als Attribute am Artikel, und die
+     * Sammelsuche gibt sie **je MCS** aus:
+     *
+     * | | Einzelabruf | Sammelabzug |
+     * |---|---|---|
+     * | Anfragen | 35.641 je Markt | **2 insgesamt** |
+     * | Dauer | ~108 min (gedrosselt) | ~10 s laden, ~115 s zerlegen |
+     * | Märkte | nur der Standard-Shop | **alle acht** |
+     * | Ratenbegrenzung | kritisch | belanglos |
+     *
+     * **Die Auflösung ist der heikle Teil und wurde deshalb geprüft.** Der Abzug enthält
+     * rohe `PriceEntry`-Listen mit Zeitfenstern, Preisgruppen und mehreren konkurrierenden
+     * Einträgen; welcher gilt, entscheidet sonst der Shop. Gefiltert wird auf
+     * `priceGroup='DEFAULT'`, `customer='0'`, `amount=0` und ein Gültigkeitsfenster, das
+     * heute enthält. Gegen den Einzel-Endpunkt gemessen (18.08.2026, 200 zufällige
+     * Artikel): **200 von 200 übereinstimmend, null Abweichungen.**
+     *
+     * Die Marke `dominicus` bleibt außen vor — das ist der B2B-Shop (Auskunft GRUBE).
+     *
+     * @param string[] $mcsListe  gesuchte MCS-Schlüssel
+     * @return array<string, array<string, array{gross:string, net:string}>>  mcs => sku => Preise
+     */
+    public function allePreise(array $mcsListe): array
+    {
+        $out = [];
+        foreach ($mcsListe as $mcs) { $out[$mcs] = []; }
+
+        foreach ([['prices', 'gross'], ['netPrices', 'net']] as [$attribut, $feld]) {
+            $datei = \sys_get_temp_dir() . '/y5x-' . $attribut . '-' . \getmypid() . '.html';
+            try {
+                $this->http->herunterladen('/admin/os/overview', [
+                    'searchType' => 'search_attr',
+                    'searchEntries[0].negate' => 'POS',
+                    'searchEntries[0].name'   => $attribut,
+                    'searchEntries[0].comp'   => 'EXISTS',
+                    'searchEntries[0].value'  => '',
+                    'onlyValid' => 'true',
+                ], $datei, 900);
+                $this->zerlege($datei, $mcsListe, $feld, $out);
+            } finally {
+                @\unlink($datei);
+            }
+        }
+        // Nur Artikel behalten, für die BEIDE Werte vorliegen — ein halbes Paar wäre
+        // wertlos, weil die Konsistenzregel beide aus demselben Ereignis verlangt.
+        foreach ($out as $mcs => $artikel) {
+            foreach ($artikel as $sku => $p) {
+                if (!isset($p['gross'], $p['net'])) {
+                    unset($out[$mcs][$sku]);
+                }
+            }
+        }
+        return $out;
+    }
+
+    /** Streamend zerlegen — 191 MB je Datei passen nicht in den Arbeitsspeicher. */
+    private function zerlege(string $datei, array $mcsListe, string $feld, array &$out): void
+    {
+        $fp = \fopen($datei, 'r');
+        if ($fp === false) {
+            return;
+        }
+        $rest = '';
+        $jetzt = \time();
+        while (!\feof($fp)) {
+            $rest .= (string) \fread($fp, 4_194_304);
+            while (($a = \strpos($rest, '<tr>')) !== false
+                && ($b = \strpos($rest, '</tr>', $a)) !== false) {
+                $zeile = \substr($rest, $a, $b - $a + 5);
+                $rest = \substr($rest, $b + 5);
+
+                $treffer = null;
+                foreach ($mcsListe as $mcs) {
+                    if (\str_contains($zeile, $mcs)) { $treffer = $mcs; break; }
+                }
+                if ($treffer === null || !\preg_match('~Item%23(\d+)~', $zeile, $s)) {
+                    continue;
+                }
+                \preg_match_all('~<td[^>]*>(.*?)</td>~s', $zeile, $c);
+                $wert = \html_entity_decode(\strip_tags($c[1][3] ?? ''));
+                foreach (\preg_split('~(?<=\}),\s*~', \trim($wert, "[] \n")) ?: [] as $eintrag) {
+                    if (!\str_contains($eintrag, "priceGroup='DEFAULT'")
+                        || !\str_contains($eintrag, "customer='0'")
+                        || !\str_contains($eintrag, 'amount=0,')) {
+                        continue;
+                    }
+                    if (!\preg_match('~price=([\d.]+)~', $eintrag, $p)) {
+                        continue;
+                    }
+                    if (\preg_match('~startDate=([^,]+),~', $eintrag, $sd)
+                        && \strtotime(\trim($sd[1])) > $jetzt) {
+                        continue;
+                    }
+                    if (\preg_match('~endDate=([^,]+),~', $eintrag, $ed)) {
+                        $bis = \strtotime(\trim($ed[1]));
+                        if ($bis !== false && $bis < $jetzt) { continue; }
+                    }
+                    $out[$treffer][$s[1]][$feld] = $p[1];
+                }
+            }
+            if (\strlen($rest) > 20_000_000) {
+                $rest = \substr($rest, -1_000_000);
+            }
+        }
+        \fclose($fp);
+    }
+
+    /**
      * Brutto- und Nettopreis der Grundmenge für einen Artikel.
      *
      * @return array{net:string, gross:string}|null  null = kein Preis im Shop

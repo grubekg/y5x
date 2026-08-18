@@ -36,8 +36,35 @@ final class Run
     ) {
     }
 
+    /**
+     * Der Sammelabzug für MEHRERE Märkte — einmal laden, einmal zerlegen.
+     *
+     * Je Markt zu laden wäre der naheliegende Weg und wäre falsch: Dieselben zwei Dateien
+     * (je 191 MB) enthalten **alle** Märkte. Acht Läufe daraus zu machen hieße 3 GB statt
+     * 382 MB und achtmal dasselbe zu zerlegen.
+     *
+     * @param array<string,string> $maerkte  Marktcode => Währung
+     * @return array<string, array<string, array{gross:string, net:string}>> mcs => sku => Preise
+     */
+    public function sammelPreise(array $maerkte, bool $ausfuehrlich = false): array
+    {
+        $mcsListe = [];
+        foreach ($maerkte as $code => $waehrung) {
+            $mcsListe[] = $this->mcs($code, $waehrung);
+        }
+        $t = \microtime(true);
+        $d = $this->shop->allePreise($mcsListe);
+        if ($ausfuehrlich) {
+            \printf("Sammelabzug: %d Märkte in %.0f s\n", \count($d), \microtime(true) - $t);
+            foreach ($d as $mcs => $artikel) {
+                \printf("  %-46s %s Artikel\n", $mcs, \number_format(\count($artikel), 0, ',', '.'));
+            }
+        }
+        return $d;
+    }
+
     public function fuerMarkt(string $markt, int $limit, bool $ausfuehrlich = false,
-                             bool $abruf = true): array
+                             bool $abruf = true, ?array $sammelVorab = null): array
     {
         $heute = new \DateTimeImmutable('today');
         $m = $this->markets[$markt] ?? [];
@@ -61,6 +88,28 @@ final class Run
             'aus (%s)', $this->pss === null ? 'kein Adapter'
                 : ($trocken ? 'Trockenmodus' : 'write_enabled=false fuer ' . $markt))),
             $ausfuehrlich);
+
+        // Preise fuer den ganzen Markt in zwei Anfragen holen — siehe
+        // IshopPriceAdapter::allePreise(). Der Einzelabruf bleibt als Rueckfall fuer
+        // einzelne Artikel, ist aber fuer einen Lauf ueber das Sortiment untauglich:
+        // 35.641 Anfragen je Markt, und die anderen sieben Maerkte kaeme er gar nicht.
+        $sammel = null;
+        if ($abruf && $sammelVorab !== null) {
+            $sammel = $sammelVorab[$this->mcs($markt, $waehrung)] ?? [];
+        } elseif ($abruf) {
+            $mcs = $this->mcs($markt, $waehrung);
+            try {
+                $t0 = \microtime(true);
+                $sammel = $this->shop->allePreise([$mcs])[$mcs] ?? [];
+                $this->melden(\sprintf('%s Preise fuer %s in %.0f s (Sammelabzug)',
+                    \number_format(\count($sammel), 0, ',', '.'), $mcs, \microtime(true) - $t0),
+                    $ausfuehrlich);
+            } catch (\Throwable $e) {
+                $this->melden('Sammelabzug nicht moeglich (' . $e->getMessage()
+                    . ') — es wird einzeln abgerufen', true);
+                $sammel = null;
+            }
+        }
 
         if ($abruf) {
             $skus = $this->shop->skus($limit);
@@ -113,7 +162,13 @@ final class Run
 
         foreach ($skus as $i => $sku) {
             try {
-                $p = $abruf ? $this->shop->preis($sku) : ['net' => null, 'gross' => null];
+                if (!$abruf) {
+                    $p = ['net' => null, 'gross' => null];
+                } elseif ($sammel !== null) {
+                    $p = $sammel[$sku] ?? null;      // null = im Markt nicht gefuehrt
+                } else {
+                    $p = $this->shop->preis($sku);
+                }
             } catch (\Throwable $e) {
                 // Ein Lauf, der nur "1000 Fehler" meldet, ist wertlos. Die Meldungen
                 // werden nach Art gezaehlt und landen in der Notiz des run_log.

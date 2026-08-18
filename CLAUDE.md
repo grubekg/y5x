@@ -303,6 +303,58 @@ je Artikel.
 PSS-Einträge mitsamt `provider: {"excludePromotions": true}` — den Preis **ohne**
 Aktionen. `.../shop/get/...` ist die Sicht des Shops.
 
+### Die Preise: zwei Anfragen statt 35.641 je Markt
+
+**Der Einzel-Endpunkt war nicht bloß langsam, er war untauglich.**
+`/admin/pssoverview/prices/shop/get/{sku}/…` kennt **keinen Markt-Parameter** und liefert
+nur den Standard-Shop. Für acht Märkte gab es damit keinen Weg.
+
+Der Object Storage führt die Preise als Attribute am Artikel (`prices`, `netPrices`,
+daneben `promotionPrices`, `unrebatedPrices`, `rrpPrice`), und die Sammelsuche gibt sie
+**je MCS** aus — also je Markt:
+
+```
+/admin/os/overview?…&searchEntries[0].name=prices&searchEntries[0].comp=EXISTS
+-> 302.782 Zeilen, 191 MB, 9 s
+```
+
+| | Einzelabruf | Sammelabzug |
+|---|---|---|
+| Anfragen | 35.641 **je Markt** | **2 insgesamt** |
+| Dauer | ~108 min gedrosselt | ~10 s laden, ~2 min zerlegen |
+| Märkte | nur der Standard-Shop | **alle acht** |
+| Ratenbegrenzung | kritisch | belanglos |
+
+Enthalten sind `brand=grube` für `de/at/fr/pl/sk/se/dk/ch` (plus `eu`) sowie
+`brand=dominicus` — Letzteres ist der **B2B-Shop** und bleibt außen vor (Auskunft GRUBE).
+
+> **Die Auflösung ist der heikle Teil.** Der Abzug enthält rohe `PriceEntry`-Listen mit
+> Zeitfenstern, Preisgruppen (`DEFAULT`, `DEFAULT_NOTLOGGEDIN`) und mehreren
+> konkurrierenden Einträgen; welcher gilt, entscheidet sonst der Shop. Sie selbst
+> nachzubilden ist genau die Sorte Cleverness, die dieses Projekt sich nicht leisten
+> kann — **deshalb wurde sie gegen den autoritativen Einzel-Endpunkt gemessen:
+> 200 zufällige Artikel, 200 Übereinstimmungen, null Abweichungen.**
+> Gefiltert wird auf `priceGroup='DEFAULT'`, `customer='0'`, `amount=0` und ein
+> Gültigkeitsfenster, das heute enthält.
+
+Der Einzelabruf bleibt als Rückfall für einen einzelnen Artikel erhalten. 191 MB müssen
+**streamend** verarbeitet werden — im Arbeitsspeicher gehalten stirbt `preg_match_all`
+bei 512 MB.
+
+### Die Ratenbegrenzung des Shops
+
+`/admin/rate-limiting/status` verrät sie: **800 Anfragen in 2 Minuten**, aktiv, ohne
+Trockenmodus, gezählt je **IP UND User-Agent** (`UserAgentMode`). Unser 1000er-Lauf lag
+mit rund 500/min darüber und kam durch — worauf man sich nicht verlassen sollte.
+
+Das wiegt hier schwerer als anderswo: Die ausgehende IP `176.9.21.74` gehört dem **ganzen
+Webspace**. Eine Sperre träfe nicht nur dieses Werkzeug, sondern jedes andere Projekt am
+selben Shop. Deshalb `requests_per_minute: 330` in `app.yml` und ein eigener User-Agent
+(`y5x-Bestpreis-Tracker`), damit unser Verkehr im Protokoll des Shops erkennbar ist.
+
+Mit dem Sammelabzug ist die Frage praktisch erledigt — es bleiben zwei große Anfragen
+statt Zehntausender kleiner.
+
 ### Die Artikelliste: eine Anfrage statt tausend
 
 Der naheliegende Weg — Produkte suchen, je Produkt `os/info` — kostet gemessen **0,27 s
@@ -634,11 +686,9 @@ php bin/demo-seed.php [--loeschen]           # Beispieldaten (nur staging)
 
 ## Offen (TODO(setup))
 
-1. ~~iSHOP-Endpunkt~~ — **erledigt am 18.08.2026**, siehe oben. Offen bleibt allein die
-   **Marktdimension**: Der Endpunkt kennt keinen Markt-Parameter und liefert die Preise
-   des Standard-Shops. Wie AT/FR/PL/SK/SE/DK/CH abgefragt werden (eigener Host? Header?
-   MCS-Parameter?), ist noch zu klären — ebenso, dass die Antwort **keine Währung**
-   mitliefert; die Währungsprüfung aus § 3 stützt sich bis dahin allein auf `markets.yml`.
+1. ~~iSHOP-Endpunkt und Marktdimension~~ — **erledigt am 18.08.2026**. Der Sammelabzug
+   liefert alle acht Märkte samt Währung im MCS-Schlüssel; die Währungsprüfung aus § 3
+   kann damit gegen die Quelle laufen statt gegen `markets.yml`.
 1b. **Längste geplante Aktionsdauer**, damit `permanent_after_days` darübergesetzt werden
    kann. Ohne Aktionskennzeichen trägt diese Zahl allein — sie ist jetzt die wichtigste
    offene Angabe.

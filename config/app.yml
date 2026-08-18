@@ -32,6 +32,15 @@ prev_price_max_days: 42
 
 anomaly_alert_threshold: 50     # verworfene Datensaetze je Lauf bis Alert
 batch_size: 100                 # Artikel je iSHOP-Request
+
+# Takt gegen den iSHOP. Der Shop begrenzt auf 800 Anfragen in 2 Minuten je IP UND
+# User-Agent (gemessen 18.08.2026 an /admin/rate-limiting/status; UserAgentMode aktiv),
+# also 400/min. Der Standard liegt bewusst darunter.
+#
+# Das wiegt hier schwerer als sonst: Die ausgehende IP gehoert dem ganzen Webspace. Eine
+# Sperre traefe nicht nur dieses Werkzeug, sondern jedes andere Projekt, das denselben
+# Shop anspricht. 0 = keine Drosselung (nur fuer kurze Messungen).
+requests_per_minute: 330
 max_write_retries: 3
 
 alert_email: TODO
