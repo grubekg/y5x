@@ -127,8 +127,14 @@ seitenkopf($sku !== '' ? "Artikel $sku ($markt)" : 'Artikel & Nachweis');
   (netto <?= geld($preisTag?->net, $waehrung, 4) ?>)<br>
   Niedrigster Preis der <?= $tage ?> Tage davor
   (<?= datum($fensterTage[0]['date'] ?? null) ?>–<?= datum($fensterTage[count($fensterTage) - 1]['date'] ?? null) ?>):
-  <b><?= geld($ref?->gross, $waehrung) ?></b> brutto
-  (netto <?= geld($ref?->net, $waehrung, 4) ?>)<br>
+  <?php if ($ref !== null && $ref->hasValue()): ?>
+  <b><?= geld($ref->gross, $waehrung) ?></b> brutto (netto <?= geld($ref->net, $waehrung, 4) ?>)<br>
+  <?php else: ?>
+  <span class="warn">kein Referenzpreis</span> — in diesem Zeitraum liegt kein
+  beobachteter Preis vor. Die Aufzeichnung für diesen Artikel beginnt am
+  <b><?= datum($events[0]->validFrom->format('Y-m-d')) ?></b>; ein 30-Tage-Tiefstpreis
+  lässt sich frühestens ab dem Folgetag belegen.<br>
+  <?php endif; ?>
   Grundlage: <?= h($ref?->origin ?? '—') ?><?php if ($quelle !== null): ?>,
     Beleg-Intervall <?= datum($quelle->validFrom->format('Y-m-d')) ?>–<?= datum($quelle->validTo?->format('Y-m-d')) ?><?php endif; ?><br>
   Zustand am Stichtag: <span class="tag <?= $ref?->state->isPromo() ? 'promo' : '' ?>">

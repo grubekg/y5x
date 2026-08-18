@@ -195,6 +195,65 @@ Vorhandene priceTypes je SKU: `PRICE_NET/GROSS`, `RRP_NET/GROSS`, `UNREBATED_NET
 Offene Datenauffälligkeit: Zwei Zeilen tragen ein doppelt maskiertes
 `provider`-Feld (`{\"excludePromotions\": \"false\"}`) — beim Auswerten robust behandeln.
 
+## Woher die Preise kommen — gefunden am 18.08.2026
+
+**Die Routenliste macht das Raten überflüssig.** `GET /admin/` liefert alle 253
+Admin-Endpunkte als JSON. Vorher hatte ich vergeblich nach GraphQL gesucht (404 auf
+`/admin/graphql`, `/api/graphql`, `/admin/v3/api-docs` …).
+
+```
+GET /admin/pssoverview/prices/shop/get/{sku}/{customerGroup}/{customer}
+-> {"prices": {"prices": {"0": "949,00 "}, "prices_net": {"0": "797,48 "}}}
+```
+
+`prices.prices` ist brutto, `prices.prices_net` netto, der Schlüssel `"0"` ist die
+Menge — genau die Grundmenge (`amount 0`), die das Briefing verlangt. Rund **0,07–0,2 s**
+je Artikel.
+
+**Bewusst NICHT `/admin/pssoverview/prices/activeCache/get/...`:** Der liefert die rohen
+PSS-Einträge mitsamt `provider: {"excludePromotions": true}` — den Preis **ohne**
+Aktionen. `.../shop/get/...` ist die Sicht des Shops.
+
+### Die Artikelliste: eine Anfrage statt tausend
+
+Der naheliegende Weg — Produkte suchen, je Produkt `os/info` — kostet gemessen **0,27 s
+und 389 KB pro Produkt**: für 1.000 Artikel rund fünf Minuten und 270 MB, nur um Nummern
+zu erfahren. Artikel sind aber selbst suchbar:
+
+```
+/admin/os/overview?searchType=search_attr&searchEntries[0].negate=POS
+  &searchEntries[0].name=com.novomind.ishop.core.Item.sku&searchEntries[0].comp=EXISTS
+-> 35.641 Artikel in 1,6 s
+```
+
+Und weil die Ergebnistabelle den Wert des gesuchten Attributs als eigene Spalte führt,
+steht die Artikelnummer direkt darin — kein zweiter Abruf. `negate=POS` ist Pflicht:
+Ohne den Parameter sucht der Object Storage das **Gegenteil** und liefert eine sauber
+formatierte, aber falsche Trefferliste.
+
+> **PHP-Falle, die eine Stunde gekostet hätte:** `array_keys()` wandelt rein numerische
+> Schlüssel in **Integer** um — aus der Artikelnummer wird eine Zahl, und führende Nullen
+> gehen verloren. Deshalb `array_map(strval(...), array_keys(...))`.
+
+### Erster Echtlauf (18.08.2026, 1.000 Artikel, DE)
+
+| | |
+|---|---|
+| Dauer | 119 s (Folgelauf 83 s) |
+| gelesen / Fehler | 1.000 / **0** |
+| angelegte Intervalle | 999 |
+| **verworfen** | **1** — Artikel 1147934587 mit 0,00 € netto und brutto |
+| Netto/Brutto | durchweg Faktor ≈ 1,19; Spanne 0,35 € bis 6.199,00 € |
+| PSS-Writes | **0** (Adapter existiert nicht) |
+
+Der Anomalie-Filter aus § 3 hat also im allerersten Lauf gegriffen — ohne ihn wäre ein
+Nullpreis als 30-Tage-Minimum durchgelaufen und hätte eine Ersparnis von 100 %
+ausgewiesen. **Verworfene Datensätze werden mit Artikelnummer und Begründung
+protokolliert**, nicht bloß gezählt: „1 Anomalie" lässt sich später niemandem erklären.
+
+Der zweite Lauf meldete 999 × `unveraendert` und 0 × `neu` — die Fortschreibung ist
+idempotent.
+
 ## Datenbank — die eine Regel, die hier alles trägt
 
 Alle Projekte und **beide Umgebungen** teilen sich eine MySQL-Datenbank; getrennt wird
@@ -254,9 +313,11 @@ php bin/demo-seed.php [--loeschen]           # Beispieldaten (nur staging)
 
 ## Offen (TODO(setup))
 
-1. **iSHOP:** Endpunkt/Query für die Preisabfrage `amount 0` (GraphQL-Introspection),
-   Beispiel-Response. — Die Frage nach einem Aktionskennzeichen ist **beantwortet und
-   erledigt**: Es gibt keines und soll keines geben (siehe oben).
+1. ~~iSHOP-Endpunkt~~ — **erledigt am 18.08.2026**, siehe oben. Offen bleibt allein die
+   **Marktdimension**: Der Endpunkt kennt keinen Markt-Parameter und liefert die Preise
+   des Standard-Shops. Wie AT/FR/PL/SK/SE/DK/CH abgefragt werden (eigener Host? Header?
+   MCS-Parameter?), ist noch zu klären — ebenso, dass die Antwort **keine Währung**
+   mitliefert; die Währungsprüfung aus § 3 stützt sich bis dahin allein auf `markets.yml`.
 1b. **Längste geplante Aktionsdauer**, damit `permanent_after_days` darübergesetzt werden
    kann. Ohne Aktionskennzeichen trägt diese Zahl allein — sie ist jetzt die wichtigste
    offene Angabe.
