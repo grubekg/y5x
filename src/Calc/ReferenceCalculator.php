@@ -19,12 +19,26 @@ final class Reference
         public readonly bool $windowComplete,
         /** Woher der Wert stammt — für Statusseite und Audit. */
         public readonly string $origin,
+        /**
+         * Vorstufen-Anker (§ 6.4). `null` heißt ausdrücklich **leeren**, nicht
+         * „unverändert lassen": Ein abgelaufener Streichpreis muss aus dem Frontend
+         * verschwinden, sonst wirbt der Shop mit einer Ersparnis gegen einen Preis, den
+         * es seit Wochen nicht mehr gibt.
+         */
+        public readonly ?string $prevNet = null,
+        public readonly ?string $prevGross = null,
+        public readonly string $prevOrigin = '',
     ) {
     }
 
     public function hasValue(): bool
     {
         return $this->net !== null && $this->gross !== null;
+    }
+
+    public function hasPrev(): bool
+    {
+        return $this->prevNet !== null && $this->prevGross !== null;
     }
 }
 
@@ -50,7 +64,44 @@ final class ReferenceCalculator
         private readonly PriceWindow $window,
         private readonly PromoStateMachine $machine,
         private readonly string $mode = self::MODE_FROZEN,
+        private readonly bool $prevEnabled = false,
+        private readonly int $prevMaxDays = 42,
     ) {
+    }
+
+    /**
+     * Der Vorstufen-Anker `PREV_*` — der Preis der unmittelbaren Vorstufe (§ 6.4).
+     *
+     * Ausdrücklich **nicht** der Ur-Normalpreis und **nicht** die UVP: Bei einer
+     * Abverkaufs-Preistreppe soll der Streichpreis die letzte Stufe zeigen, gegen die
+     * tatsächlich reduziert wurde.
+     *
+     * Zwei Leerungsgründe, und der zweite ist der, den man leicht vergisst:
+     * Rückkehr nach `normal` — und **Zeitablauf**. Ein eigener Preis von vor Monaten
+     * taugt nicht mehr als Streichpreis-Anker; `prev_price_max_days` begrenzt das. Jede
+     * weitere Senkung setzt den Timer zurück, denn dann ist der Anker wieder frisch.
+     *
+     * @return array{0: ?string, 1: ?string, 2: string} [net, gross, Begründung]
+     */
+    private function prev(PromoState $state, \DateTimeImmutable $heute): array
+    {
+        if (!$this->prevEnabled) {
+            return [null, null, 'PREV abgeschaltet (prev_price_enabled: false)'];
+        }
+        if (!$state->isPromo() || $state->prePromoGross === null || $state->prePromoNet === null) {
+            return [null, null, 'keine laufende Preisstufe — Anker geleert'];
+        }
+        if ($state->lastReductionAt !== null) {
+            $tage = (int) $state->lastReductionAt->diff($heute)->days;
+            if ($tage > $this->prevMaxDays) {
+                return [null, null, \sprintf(
+                    'letzte Senkung vor %d Tagen (Grenze %d) — Anker geleert',
+                    $tage, $this->prevMaxDays)];
+            }
+        }
+        return [$state->prePromoNet, $state->prePromoGross,
+                'Preis der Vorstufe vom ' . ($state->promoStarted?->modify('-1 day')
+                    ->format('d.m.Y') ?? '?')];
     }
 
     /**
@@ -67,18 +118,23 @@ final class ReferenceCalculator
         $vollstaendig = $this->window->isComplete($events, $heute);
 
         if ($this->mode === self::MODE_ROLLING) {
+            // Ohne Zustandslogik gibt es auch keine Preisstufe — der PREV-Anker haengt
+            // definitionsgemaess am Uebergang normal -> promo.
             $tiefstes = $this->window->lowestBefore($events, $heute);
             return new Reference($tiefstes?->net, $tiefstes?->gross, $currency,
                 new PromoState(), $vollstaendig,
-                'rollierendes Fenster [heute−30, gestern]');
+                'rollierendes Fenster [heute−30, gestern]',
+                null, null, 'PREV im Modus rolling nicht definiert');
         }
 
         $neu = $this->machine->advance($state, $events, $heute, $promoFlag);
+        [$prevNet, $prevGross, $prevGrund] = $this->prev($neu, $heute);
 
         if ($neu->isPromo() && $neu->frozenRefGross !== null) {
             return new Reference($neu->frozenRefNet, $neu->frozenRefGross, $currency,
                 $neu, $vollstaendig,
-                'eingefroren zum Aktionsbeginn ' . $neu->promoStarted?->format('Y-m-d'));
+                'eingefroren zum Aktionsbeginn ' . $neu->promoStarted?->format('Y-m-d'),
+                $prevNet, $prevGross, $prevGrund);
         }
 
         // Auch im Zustand `promo` kann die eingefrorene Referenz fehlen — etwa wenn die
@@ -88,6 +144,7 @@ final class ReferenceCalculator
         return new Reference($tiefstes?->net, $tiefstes?->gross, $currency, $neu, $vollstaendig,
             $neu->isPromo()
                 ? 'Aktion ohne Vorgeschichte — rollierendes Fenster als Rückfall'
-                : 'rollierendes Fenster [heute−30, gestern]');
+                : 'rollierendes Fenster [heute−30, gestern]',
+            $prevNet, $prevGross, $prevGrund);
     }
 }

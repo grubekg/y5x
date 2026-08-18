@@ -52,7 +52,7 @@ final class PromoStateMachine
         $gestern = $this->eventAm($events, $heute->modify('-1 day'));
 
         return $alt->isPromo()
-            ? $this->ausPromo($alt, $heutigesEvent, $heute, $promoFlag)
+            ? $this->ausPromo($alt, $heutigesEvent, $gestern, $heute, $promoFlag)
             : $this->ausNormal($alt, $heutigesEvent, $gestern, $events, $heute, $promoFlag);
     }
 
@@ -73,7 +73,8 @@ final class PromoStateMachine
         } else {
             return $alt->mode === PromoState::NORMAL && $alt->lastTransition === ''
                 ? $alt
-                : new PromoState(PromoState::NORMAL, null, null, null, null, $alt->lastTransition);
+                : new PromoState(PromoState::NORMAL, null, null, null, null, null, null,
+                    $alt->lastTransition);
         }
 
         // Die Referenz wird JETZT eingefroren, aus dem Fenster vor dem Aktionsbeginn.
@@ -89,6 +90,8 @@ final class PromoStateMachine
             PromoState::PROMO,
             $heute,
             $vorNiveau,
+            $gestern?->net ?? $heutigesEvent->net,   // Paar aus DEMSELBEN Event (§ 6.1)
+            $heute,                                   // Timer fuer den PREV-Anker
             $referenz?->net,
             $referenz?->gross,
             $beginn,
@@ -98,22 +101,35 @@ final class PromoStateMachine
     private function ausPromo(
         PromoState $alt,
         PriceEvent $heutigesEvent,
+        ?PriceEvent $gestern,
         \DateTimeImmutable $heute,
         ?bool $promoFlag,
     ): PromoState {
+        $beendet = static fn(string $grund): PromoState => new PromoState(
+            PromoState::NORMAL, null, null, null, null, null, null, $grund);
+
         if ($promoFlag === false) {
-            return new PromoState(PromoState::NORMAL, null, null, null, null,
-                'Aktionskennzeichen des Shops entfallen');
+            return $beendet('Aktionskennzeichen des Shops entfallen');
         }
+
+        // Weitere Stufe waehrend der Aktion: Die Referenz bleibt eingefroren (§ 11 Abs. 2),
+        // auch `pre_promo_*` bleibt stehen — der Vorstufen-Anker zeigt weiter auf den
+        // Preis VOR der Aktion. Nur der Timer wird zurueckgesetzt.
+        $weitereSenkung = $gestern !== null
+            && Money::isLess($heutigesEvent->gross, $gestern->gross);
+
         if ($promoFlag === true) {
-            return $alt;                       // Aktion läuft weiter, Referenz bleibt stehen
+            return $weitereSenkung ? $this->mitTimer($alt, $heute) : $alt;
         }
 
         // Aktion beendet: Der Preis ist auf das Vorniveau (oder darüber) zurück.
         if ($alt->prePromoGross !== null
             && Money::isGreaterOrEqual($heutigesEvent->gross, $alt->prePromoGross)) {
-            return new PromoState(PromoState::NORMAL, null, null, null, null,
-                'Preis zurück auf Vorniveau — Aktion beendet');
+            return $beendet('Preis zurück auf Vorniveau — Aktion beendet');
+        }
+
+        if ($weitereSenkung) {
+            return $this->mitTimer($alt, $heute);
         }
 
         // Dauerhafte Senkung: Bleibt derselbe niedrigere Preis lange genug stehen, war es
@@ -122,12 +138,20 @@ final class PromoStateMachine
         // eingefrorene, längst überholte Referenz.
         $tageStabil = (int) $heutigesEvent->validFrom->diff($heute)->days;
         if ($tageStabil >= $this->permanentAfterDays) {
-            return new PromoState(PromoState::NORMAL, null, null, null, null,
-                \sprintf('Preis seit %d Tagen unverändert — als neues Normalniveau übernommen',
-                    $tageStabil));
+            return $beendet(\sprintf(
+                'Preis seit %d Tagen unverändert — als neues Normalniveau übernommen',
+                $tageStabil));
         }
 
         return $alt;
+    }
+
+    /** Denselben Zustand mit zurueckgesetztem Senkungs-Timer. */
+    private function mitTimer(PromoState $alt, \DateTimeImmutable $heute): PromoState
+    {
+        return new PromoState($alt->mode, $alt->promoStarted, $alt->prePromoGross,
+            $alt->prePromoNet, $heute, $alt->frozenRefNet, $alt->frozenRefGross,
+            'weitere Senkung während der Aktion — Referenz unverändert, Timer neu');
     }
 
     /** Das Event, das an diesem Tag galt. */

@@ -28,7 +28,12 @@ CREATE TABLE IF NOT EXISTS {{P}}price_state (
   market                CHAR(2) NOT NULL,
   mode                  ENUM('normal','promo') NOT NULL DEFAULT 'normal',
   promo_started         DATE NULL,
+  -- Tag der letzten Preissenkung. Jede weitere Stufe setzt ihn zurueck; er ist der
+  -- Timer fuer die Leerung des Vorstufen-Ankers (§ 6.4, UWG-Verschleiss).
+  last_reduction_at     DATE NULL,
+  -- Paar aus DEMSELBEN Event (§ 6.1) — speist PREV_NET/PREV_GROSS.
   pre_promo_gross       DECIMAL(12,2) NULL,
+  pre_promo_net         DECIMAL(12,4) NULL,
   frozen_ref_net        DECIMAL(12,4) NULL,
   frozen_ref_gross      DECIMAL(12,2) NULL,
   -- 1, sobald das Fenster lueckenlos belegt ist. Vorher wird trotzdem geschrieben
@@ -39,6 +44,9 @@ CREATE TABLE IF NOT EXISTS {{P}}price_state (
   -- fehlgeschlagenen Write von selbst nach — die Delta-Erkennung greift wieder.
   last_written_30_net   DECIMAL(12,4) NULL,
   last_written_30_gross DECIMAL(12,2) NULL,
+  -- NULL heisst hier ausdruecklich "PREV ist im PSS geleert", nicht "nie gesetzt".
+  last_written_prev_net   DECIMAL(12,4) NULL,
+  last_written_prev_gross DECIMAL(12,2) NULL,
   last_written_at       DATETIME NULL,
   last_transition       VARCHAR(160) NULL,
   updated_at            DATETIME NULL,
@@ -70,7 +78,7 @@ CREATE TABLE IF NOT EXISTS {{P}}pss_write_log (
   id               BIGINT AUTO_INCREMENT PRIMARY KEY,
   sku              VARCHAR(64) NOT NULL,
   market           CHAR(2) NOT NULL,
-  price_type       ENUM('30_NET','30_GROSS') NOT NULL,
+  price_type       ENUM('30_NET','30_GROSS','PREV_NET','PREV_GROSS') NOT NULL,
   old_value        DECIMAL(12,4) NULL,
   new_value        DECIMAL(12,4) NOT NULL,
   currency         CHAR(3) NOT NULL,

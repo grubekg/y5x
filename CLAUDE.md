@@ -64,6 +64,54 @@ Zwei Riegel gegen Dauerzustände:
 zwingend eine beworbene Ermäßigung, und eine Ermäßigung nicht zwingend eine Senkung
 gegenüber gestern. Solange TODO(setup) 1 offen ist, gilt die Sprung-Heuristik.
 
+### `Replay` — Nachrechnung zum Stichtag (der Abmahnungsfall)
+
+Eine Abmahnung nennt ein **Datum**: „Am 14. Juli haben Sie mit −30 % geworben."
+Zu beantworten ist dann nicht, was heute gilt, sondern was an jenem Tag galt.
+
+`Replay` spielt den Zustandsautomaten vom ersten bekannten Tag an neu ab — jeweils
+**nur mit den Events, die an diesem Tag schon bekannt waren**. Ohne diese Beschränkung
+rechnete man mit Wissen aus der Zukunft, und der Nachweis wäre wertlos. Getestet.
+
+Damit wird der Referenzwert **nachgerechnet, nicht nachgeschlagen**. Genau deshalb kann
+das Dashboard auch die Gegenprobe ziehen: Stimmt die Nachrechnung mit dem überein, was
+damals laut `pss_write_log` geschrieben wurde? Weichen sie ab, will man das selbst als
+Erster wissen — nicht die Gegenseite.
+
+### `PREV_*` — Vorstufen-Anker (§ 6.4, Nachtrag 18.08.2026)
+
+Ein **eigener** Streichpreis für Abverkaufs-Preistreppen: immer der Preis der
+unmittelbaren Vorstufe, nie der Ur-Normalpreis und nie die UVP (die kommt aus `zw7`,
+eigener Kanal).
+
+**Nicht mit der 30-Tage-Referenz verwechseln — sie beantworten verschiedene Fragen:**
+
+| | beantwortet | Beispiel `DEMO-TREPPE` |
+|---|---|---|
+| `30_GROSS` | niedrigster Preis im Fenster **vor** der Ermäßigung — die rechtliche Basis | **109,00 €** (kurzer Einbruch im Fenster) |
+| `PREV_GROSS` | Preis der unmittelbar vorangegangenen Stufe — freiwilliges Frontend-Futter | **119,00 €** |
+
+Sie fallen nur auseinander, wenn das Fenster einen Einbruch enthält. Genau dieser Fall
+steht als Fixture im Test, weil er sonst nie auffiele.
+
+Zwei Leerungsgründe, und der zweite wird leicht vergessen: Rückkehr nach `normal` — und
+**Zeitablauf** (`prev_price_max_days`, Vorgabe 42). Ein eigener Preis von vor Monaten
+taugt nicht mehr als Streichpreis-Anker (UWG-Verschleiß); jede weitere Senkung setzt den
+Timer zurück. `null` heißt im Ergebnis ausdrücklich **leeren**, nicht „unverändert
+lassen" — ein abgelaufener Streichpreis muss aus dem Frontend verschwinden.
+
+Die Pflicht-Referenzen `30_*` laufen davon völlig unabhängig weiter.
+
+### `permanent_after_days` muss größer sein als die längste Aktion
+
+Die Vorgabe wurde mit dem Nachtrag von 30 auf **60** angehoben, und der Test zeigt,
+warum: Bei 30 Tagen kippt eine 35-Tage-Aktion fälschlich auf den Aktionspreis — die
+Heuristik hält sie für ein neues Normalniveau, die ausgewiesene Referenz fällt von
+119,00 € auf 99,00 €, und die beworbene Ersparnis verschwindet mitten in der Aktion.
+Ohne externes Signal kann die Heuristik eine lange Aktion nicht von einer Dauersenkung
+unterscheiden. **Mit einem iSHOP-Aktionskennzeichen entfällt sie vollständig** — ein
+weiterer Grund, TODO(setup) 1 zu klären.
+
 ### `ReferenceCalculator` — Konsistenzregel
 
 Der Referenz**tag** wird über den **Brutto**preis bestimmt; `30_NET` stammt dann aus
@@ -136,12 +184,41 @@ nur über den Tabellennamen. `Support\Db` kennt deshalb keinen Weg zu einer Tabe
 Präfix — `query()` weist einen nackten Namen zurück. Ein Staging-Lauf, der in die
 Produktionstabellen schriebe, verfälschte die Beweisgrundlage.
 
+## Das Dashboard (grube.tools/staging/y5x/status/)
+
+Kein Betriebsfenster, sondern ein **Verteidigungswerkzeug**. Zwei Seiten:
+
+**`index.php` — Lage je Markt.** Die erste Kachel ist bewusst nicht die größte Zahl,
+sondern die gefährlichste: *Artikel, die gerade eine Ermäßigung ausweisen, deren
+30-Tage-Historie aber unvollständig ist.* Dort beruht eine laufende Werbeaussage auf
+schwacher Grundlage — das will man vor einer Abmahnung wissen, nicht danach. Dazu je
+Markt: getrackte Artikel, Anteil in Aktion, Schreibfreigabe (CH steht auf „aus"),
+letzter Lauf mit **Lücken-Warnung ab 26 h**, Writes/Fehler/Anomalien der letzten 7 Tage.
+
+**`artikel.php` — der Nachweis.** Artikel + Markt + **Stichtag** ergeben ein druckbares
+Dokument (Anlage zum Schriftsatz): verlangter Preis an dem Tag, geltende 30-Tage-Referenz
+mit dem **Beleg-Intervall, aus dem sie stammt**, der Zustand samt Begründung, die
+Tagesabdeckung des Fensters mit benannten Lücken, sämtliche Preisintervalle und alles,
+was laut `pss_write_log` je geschrieben wurde.
+
+Das Diagramm ist serverseitiges SVG — kein JavaScript, keine externen Skripte, druckbar.
+**Gezeichnet als Treppe, nicht als Kurve:** Ein Preis gilt über sein Intervall konstant
+und springt dann; eine interpolierte Linie behauptete Zwischenpreise, die es nie gab.
+Bei einem Beweismittel ist das keine Kosmetik. Lücken unterbrechen die Linie, statt sie
+zu überbrücken.
+
+`bin/demo-seed.php` legt drei Beispielartikel an, damit die Seiten vor dem ersten
+Echtlauf prüfbar sind. Es **verweigert den Dienst in `prod`** — erfundene Preise haben in
+der Beweisgrundlage nichts zu suchen.
+
 ## Befehle
 
 ```bash
 bash deploy.sh staging                       # Code -> Laufzeit + Statusseite
 php bin/init-db.php --env staging            # Schema anlegen
-php tests/run.php                            # Rechenkerne, ohne Netz/DB/Composer
+php bin/migrate.php --env staging            # Spalten in bestehenden Tabellen nachziehen
+php tests/run.php                            # 47 Szenarien, ohne Netz/DB/Composer
+php bin/demo-seed.php [--loeschen]           # Beispieldaten (nur staging)
 ```
 
 ## Betrieb
@@ -170,4 +247,17 @@ php tests/run.php                            # Rechenkerne, ohne Netz/DB/Compose
 4. Entscheidung Anlauf: **Vorlauf** (30 Tage vor werblicher Nutzung produktiv) vs.
    **Backfill** (existiert eine Preishistorie der letzten 30+ Tage?).
 5. `alert_email` und die Shop-Kennungen je Markt für `markets.yml`.
-6. Verzeichnisschutz für `status/` im ISPConfig-Panel; GitHub-Repo `grubekg/y5x` anlegen.
+6. **`PREV_NET` / `PREV_GROSS` im PSS anlegen bzw. bestätigen** — und die
+   Leerungs-Semantik klären: Eintrag löschbar, oder `value: 0` mit der
+   Template-Konvention „0 = nicht anzeigen"? Der Rechenkern liefert `null` für „leeren";
+   welcher Weg daraus wird, entscheidet der Adapter.
+7. **`prev_price_max_days` von Legal kalibrieren lassen** (Vorgabe 42 Tage). Ebenso:
+   Ist `permanent_after_days: 60` größer als die längste tatsächlich geplante Aktion?
+8. Verzeichnisschutz für `status/` im ISPConfig-Panel; GitHub-Repo `grubekg/y5x` anlegen.
+
+## Abweichung vom Briefing, bewusst
+
+`app.yml` steht auf `dry_run: true`, das Briefing nennt `false`. Solange die Adapter
+fehlen, wäre `false` ohnehin wirkungslos; darüber hinaus soll das erste Schreiben in ein
+Produktivsystem eine bewusste Handlung sein, kein Nebeneffekt eines Deploys. Beim
+Scharfschalten umstellen.

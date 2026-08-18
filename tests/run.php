@@ -13,6 +13,7 @@ use Grube\Price30\Calc\EventJournal;
 use Grube\Price30\Calc\PriceEvent;
 use Grube\Price30\Calc\PriceWindow;
 use Grube\Price30\Calc\PromoState;
+use Grube\Price30\Calc\Replay;
 use Grube\Price30\Calc\PromoStateMachine;
 use Grube\Price30\Calc\ReferenceCalculator;
 use Grube\Price30\Support\Money;
@@ -39,10 +40,12 @@ function ev(string $von, ?string $bis, string $net, string $gross, string $cur =
     return new PriceEvent(tag($von), $bis === null ? null : tag($bis), $net, $gross, $cur);
 }
 
-function rechner(string $modus = ReferenceCalculator::MODE_FROZEN, int $permanent = 30): ReferenceCalculator
+function rechner(string $modus = ReferenceCalculator::MODE_FROZEN, int $permanent = 60,
+                 bool $prev = false, int $prevTage = 42): ReferenceCalculator
 {
     $w = new PriceWindow(30);
-    return new ReferenceCalculator($w, new PromoStateMachine($w, $permanent), $modus);
+    return new ReferenceCalculator($w, new PromoStateMachine($w, $permanent), $modus,
+        $prev, $prevTage);
 }
 
 // ---------------------------------------------------------------- Geldbeträge
@@ -252,6 +255,148 @@ pruefe('rolling nimmt den Aktionspreis von gestern in die Referenz auf',
     Money::equals((string) $ergR->gross, '99.00'), (string) $ergR->gross);
 pruefe('frozen liefert am selben Tag die gesetzlich richtige Referenz',
     Money::equals((string) $erg2->gross, '109.00'));
+
+// ------------------------------------------------- Vorstufen-Anker PREV_* (§ 6.4)
+echo "\n[PREV — Vorstufen-Anker fuer Abverkaufs-Preistreppen]\n";
+$rp = rechner(ReferenceCalculator::MODE_FROZEN, 60, true, 42);
+
+// Preistreppe: 119,00 -> 99,00 (Stufe 1) -> 89,00 (Stufe 2)
+$treppe1 = [
+    ev('2026-07-01', '2026-08-30', '100.0000', '119.00'),
+    ev('2026-08-31', null,         '83.1933', '99.00'),
+];
+$s1 = $rp->calculate($treppe1, new PromoState(), tag('2026-08-31'));
+pruefe('PREV wird bei Stufenstart auf die Vorstufe gesetzt',
+    Money::equals((string) $s1->prevGross, '119.00'), (string) $s1->prevGross);
+pruefe('PREV netto stammt aus demselben Event',
+    Money::equals((string) $s1->prevNet, '100.0000'), (string) $s1->prevNet);
+// Die beiden Werte fallen nur auseinander, wenn das Fenster einen Einbruch enthaelt:
+// Die 30er-Referenz ist das MINIMUM des Fensters, PREV die UNMITTELBARE Vorstufe.
+$mitDelle = [
+    ev('2026-07-01', '2026-08-09', '100.0000', '119.00'),
+    ev('2026-08-10', '2026-08-14', '91.5966', '109.00'),   // kurzer Einbruch im Fenster
+    ev('2026-08-15', '2026-08-30', '100.0000', '119.00'),
+    ev('2026-08-31', null,         '83.1933', '99.00'),
+];
+$sd = $rp->calculate($mitDelle, new PromoState(), tag('2026-08-31'));
+pruefe('30er-Referenz ist das Fenster-MINIMUM (109,00)',
+    Money::equals((string) $sd->gross, '109.00'), (string) $sd->gross);
+pruefe('PREV ist die UNMITTELBARE Vorstufe (119,00) — nicht dasselbe',
+    Money::equals((string) $sd->prevGross, '119.00')
+    && !Money::equals((string) $sd->gross, (string) $sd->prevGross), (string) $sd->prevGross);
+
+$treppe2 = [
+    ev('2026-07-01', '2026-08-30', '100.0000', '119.00'),
+    ev('2026-08-31', '2026-09-09', '83.1933', '99.00'),
+    ev('2026-09-10', null,         '74.7899', '89.00'),
+];
+$s2 = $rp->calculate($treppe2, $s1->state, tag('2026-09-10'));
+pruefe('weitere Stufe laesst PREV auf dem Preis VOR der Aktion stehen',
+    Money::equals((string) $s2->prevGross, '119.00'), (string) $s2->prevGross);
+pruefe('weitere Stufe setzt den Timer zurueck',
+    $s2->state->lastReductionAt?->format('Y-m-d') === '2026-09-10',
+    $s2->state->lastReductionAt?->format('Y-m-d') ?? 'null');
+
+// Zeitablauf: 42 Tage nach der letzten Senkung ist der Anker verbraucht.
+$lang = [
+    ev('2026-07-01', '2026-08-30', '100.0000', '119.00'),
+    ev('2026-08-31', null,         '83.1933', '99.00'),
+];
+$nach40 = $rp->calculate($lang, $s1->state, tag('2026-10-10'));   // 40 Tage
+pruefe('PREV haelt innerhalb der Frist', $nach40->hasPrev(), $nach40->prevOrigin);
+$nach45 = $rp->calculate($lang, $s1->state, tag('2026-10-15'));   // 45 Tage
+pruefe('PREV wird nach Fristablauf geleert', !$nach45->hasPrev(), $nach45->prevOrigin);
+pruefe('die 30er-Referenz bleibt davon unberuehrt', $nach45->hasValue());
+
+// Rueckkehr zu normal leert den Anker.
+$zurueckNormal = [
+    ev('2026-07-01', '2026-08-30', '100.0000', '119.00'),
+    ev('2026-08-31', '2026-09-04', '83.1933', '99.00'),
+    ev('2026-09-05', null,         '100.0000', '119.00'),
+];
+$s3 = $rp->calculate($zurueckNormal, $s1->state, tag('2026-09-05'));
+pruefe('Rueckkehr zu normal leert PREV', !$s3->hasPrev() && !$s3->state->isPromo(),
+    $s3->prevOrigin);
+
+// Feature-Flag aus.
+$ohne = rechner(ReferenceCalculator::MODE_FROZEN, 60, false)
+    ->calculate($treppe1, new PromoState(), tag('2026-08-31'));
+pruefe('prev_price_enabled: false unterdrueckt jeden PREV-Wert', !$ohne->hasPrev(),
+    $ohne->prevOrigin);
+pruefe('die Pflicht-Referenz laeuft trotzdem', $ohne->hasValue());
+
+// permanent_after_days MUSS groesser sein als die laengste Aktion — Gegenprobe.
+$langeAktion = [
+    ev('2026-06-01', '2026-07-31', '100.0000', '119.00'),
+    ev('2026-08-01', null,         '83.1933', '99.00'),
+];
+$mit30 = rechner(ReferenceCalculator::MODE_FROZEN, 30)
+    ->calculate($langeAktion, rechner(ReferenceCalculator::MODE_FROZEN, 30)
+        ->calculate($langeAktion, new PromoState(), tag('2026-08-01'))->state,
+        tag('2026-09-05'));
+$mit60 = rechner(ReferenceCalculator::MODE_FROZEN, 60)
+    ->calculate($langeAktion, rechner(ReferenceCalculator::MODE_FROZEN, 60)
+        ->calculate($langeAktion, new PromoState(), tag('2026-08-01'))->state,
+        tag('2026-09-05'));
+pruefe('mit permanent_after_days=30 kippt eine 35-Tage-Aktion faelschlich auf den Aktionspreis',
+    !$mit30->state->isPromo() && Money::equals((string) $mit30->gross, '99.00'),
+    (string) $mit30->gross);
+pruefe('mit dem neuen Standard 60 bleibt die Referenz korrekt eingefroren',
+    $mit60->state->isPromo() && Money::equals((string) $mit60->gross, '119.00'),
+    (string) $mit60->gross);
+
+// ------------------------------------------------- Nachrechnung zum Stichtag
+echo "\n[Nachrechnung zum Stichtag — der Abmahnungsfall]\n";
+$replay = new Replay($r);
+
+// Historie mit einer Aktion, die am 31.08. begann und am 02.09. endete.
+$fall = [
+    ev('2026-07-01', '2026-08-09', '100.0000', '119.00'),
+    ev('2026-08-10', '2026-08-14', '91.5966', '109.00'),
+    ev('2026-08-15', '2026-08-30', '100.0000', '119.00'),
+    ev('2026-08-31', '2026-09-01', '83.1933', '99.00'),   // Aktion
+    ev('2026-09-02', '2026-09-20', '100.0000', '119.00'),
+];
+
+$amAktionstag = $replay->until($fall, tag('2026-08-31'));
+pruefe('Stichtag 31.08. (Aktionstag 1): Referenz 109,00',
+    $amAktionstag !== null && Money::equals((string) $amAktionstag->gross, '109.00'),
+    (string) $amAktionstag?->gross);
+pruefe('Stichtag 31.08.: Zustand war promo', (bool) $amAktionstag?->state->isPromo());
+
+$amTag2 = $replay->until($fall, tag('2026-09-01'));
+pruefe('Stichtag 01.09. (Aktionstag 2): Referenz UNVERAENDERT 109,00',
+    Money::equals((string) $amTag2?->gross, '109.00'), (string) $amTag2?->gross);
+
+$davor = $replay->until($fall, tag('2026-08-20'));
+pruefe('Stichtag 20.08. (vor der Aktion): normal, Referenz 109,00',
+    !$davor?->state->isPromo() && Money::equals((string) $davor?->gross, '109.00'));
+
+$danach = $replay->until($fall, tag('2026-09-05'));
+pruefe('Stichtag 05.09. (nach der Aktion): normal, Fenster enthaelt jetzt 99,00',
+    !$danach?->state->isPromo() && Money::equals((string) $danach?->gross, '99.00'),
+    (string) $danach?->gross);
+
+pruefe('vor dem ersten bekannten Tag gibt es keinen Nachweis',
+    $replay->until($fall, tag('2026-06-30')) === null);
+
+// Kein Wissen aus der Zukunft: dieselbe Historie, aber Stichtag VOR der Aktion —
+// der spaetere Aktionspreis darf die damalige Referenz nicht beeinflussen.
+$mitZukunft = $replay->until($fall, tag('2026-08-20'));
+$ohneZukunft = $replay->until(array_slice($fall, 0, 3), tag('2026-08-20'));
+pruefe('Nachrechnung nutzt kein Wissen aus der Zukunft',
+    Money::equals((string) $mitZukunft?->gross, (string) $ohneZukunft?->gross));
+
+$preis = $replay->priceOn($fall, tag('2026-08-31'));
+pruefe('geltender Preis am Stichtag ist belegbar',
+    $preis !== null && Money::equals($preis->gross, '99.00'));
+
+$tage = $replay->windowDays($fall, tag('2026-08-31'));
+pruefe('Fenster wird tagesweise belegt (30 Tage)', count($tage) === 30, (string) count($tage));
+pruefe('erster Fenstertag ist 01.08.', $tage[0]['date'] === '2026-08-01', $tage[0]['date']);
+pruefe('letzter Fenstertag ist 30.08.', $tage[29]['date'] === '2026-08-30', $tage[29]['date']);
+$mitPreis = array_filter($tage, static fn($t) => $t['gross'] !== null);
+pruefe('alle 30 Fenstertage sind mit einem Preis belegt', count($mitPreis) === 30);
 
 echo "\n" . (empty($FAILS)
     ? "ALLE SZENARIEN BESTANDEN"

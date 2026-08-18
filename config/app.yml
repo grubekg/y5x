@@ -6,7 +6,22 @@
 calculation_mode: frozen
 
 window_days: 30
-permanent_after_days: 30        # promo -> normal, wenn der gesenkte Preis so lange steht
+# promo -> normal, wenn der gesenkte Preis so lange unveraendert steht.
+# MUSS groesser sein als die laengste geplante Aktionsdauer. Sonst kippt die Referenz
+# mitten in einer langen Aktion auf den Aktionspreis — gemessen im Test: Bei 30 Tagen
+# faellt eine 35-Tage-Aktion faelschlich auf 99,00 statt korrekt auf 119,00 zu bleiben.
+# Ohne externes Signal kann die Heuristik eine lange Aktion nicht von einer Dauersenkung
+# unterscheiden; mit einem iSHOP-Aktionskennzeichen entfaellt sie vollstaendig.
+permanent_after_days: 60
+
+# Vorstufen-Anker PREV_NET/PREV_GROSS (§ 6.4): der Preis der unmittelbaren Vorstufe als
+# eigener Streichpreis fuer Abverkaufs-Preistreppen. Freiwilliges Frontend-Futter — die
+# rechtliche Basis bleiben die 30_*-Werte, die davon voellig unabhaengig laufen.
+prev_price_enabled: true
+# Leerung des Ankers X Tage nach der letzten Senkung: Ein alter eigener Preis taugt nur
+# begrenzte Zeit als Streichpreis (UWG-Verschleiss). Konservativ gewaehlt, VON LEGAL ZU
+# KALIBRIEREN. Jede weitere Senkung setzt den Timer zurueck.
+prev_price_max_days: 42
 
 anomaly_alert_threshold: 50     # verworfene Datensaetze je Lauf bis Alert
 batch_size: 100                 # Artikel je iSHOP-Request
