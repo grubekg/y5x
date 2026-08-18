@@ -48,6 +48,39 @@ final class Http
         return ['status' => $status, 'body' => $body];
     }
 
+    /**
+     * Schreibender Aufruf mit JSON-Rumpf.
+     *
+     * Bewusst getrennt von {@see get}: Ein Werkzeug, dessen Kern lesend ist, soll den
+     * schreibenden Weg an der Aufrufstelle erkennbar machen.
+     *
+     * @return array{status:int, body:string}
+     */
+    public function sende(string $methode, string $pfad, array $rumpf, int $timeout = 120): array
+    {
+        $url = \rtrim($this->base, '/') . $pfad;
+        $ch = \curl_init($url);
+        \curl_setopt_array($ch, [
+            \CURLOPT_RETURNTRANSFER => true,
+            \CURLOPT_CUSTOMREQUEST  => \strtoupper($methode),
+            \CURLOPT_POSTFIELDS     => \json_encode($rumpf, \JSON_UNESCAPED_UNICODE | \JSON_THROW_ON_ERROR),
+            \CURLOPT_TIMEOUT        => $timeout,
+            \CURLOPT_HTTPHEADER     => ['Content-Type: application/json', 'Accept: application/json'],
+            \CURLOPT_FOLLOWLOCATION => false,
+        ]);
+        if ($this->user !== '') {
+            \curl_setopt($ch, \CURLOPT_USERPWD, $this->user . ':' . $this->pass);
+        }
+        $body = (string) \curl_exec($ch);
+        $status = (int) \curl_getinfo($ch, \CURLINFO_HTTP_CODE);
+        $fehler = \curl_error($ch);
+        \curl_close($ch);
+        if ($fehler !== '') {
+            throw new \RuntimeException("HTTP-Fehler ($methode $url): $fehler");
+        }
+        return ['status' => $status, 'body' => $body];
+    }
+
     public function json(string $pfad, array $query = []): mixed
     {
         $r = $this->get($pfad, $query);

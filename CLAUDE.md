@@ -195,6 +195,45 @@ Vorhandene priceTypes je SKU: `PRICE_NET/GROSS`, `RRP_NET/GROSS`, `UNREBATED_NET
 Offene Datenauffälligkeit: Zwei Zeilen tragen ein doppelt maskiertes
 `provider`-Feld (`{\"excludePromotions\": \"false\"}`) — beim Auswerten robust behandeln.
 
+## Der Schreibweg in den PSS (18.08.2026 ermittelt, TODO(setup) 2 und 6 erledigt)
+
+**Es gibt eine Integrationsumgebung, und dort gehören solche Versuche hin:**
+`https://integ.grube.de/admin/pss/api/v2_beta/prices`, erreichbar mit denselben
+Zugangsdaten. `staging` schreibt dorthin, `prod` auf `admin.grube.app` — der Unterschied
+steht in `.env` und ist keine Formalie: Ein Staging-Lauf gegen den Produktiv-PSS
+schriebe echte Preiseinträge.
+
+Eine API-Beschreibung gibt es nicht (alle üblichen Pfade antworten mit 500). Erlaubt sind
+laut `OPTIONS`: `GET, HEAD, PUT, DELETE, PATCH` — **kein POST**. Die Semantik wurde
+deshalb gemessen, nicht angenommen:
+
+| Erkenntnis | Beleg |
+|---|---|
+| **`PATCH` ist ein echter Upsert** | derselbe Eintrag zweimal → **eine** Zeile mit neuem Wert |
+| **`PATCH` lässt alles andere unberührt** | 96 Zeilen vorher, 97 nachher, **0 verschwunden** |
+| **`DELETE` entfernt genau einen Eintrag** | danach Fingerabdruck (SHA-256 über alle Zeilen) **exakt wie vorher** |
+| **Neue priceTypes brauchen keine Anmeldung** | `30_GROSS` wurde ohne Vorbereitung angenommen |
+| mehrere Einträge je Aufruf | ein `PATCH` mit zwei Einträgen setzte beide |
+
+Damit ist **Akzeptanzkriterium 5** belegt (Mehrfachläufe erzeugen keine Duplikate) und
+**TODO(setup) 6** beantwortet: Die Leerung des Vorstufen-Ankers ist ein `DELETE`, die
+`value: 0`-Konvention wird nicht gebraucht.
+
+**Gelernt wurde all das an einer erfundenen Artikelnummer ohne jeden Preis**
+(`Y5X-SCHREIBTEST-0001`). Erst als klar war, dass `PATCH` additiv arbeitet, ging ein
+Testeintrag an einen echten Artikel — und der wurde anschließend so entfernt, dass der
+Fingerabdruck wieder stimmte. Bei einem Preissystem lernt man die Semantik nicht an
+echten Daten.
+
+**`PUT` wurde nicht ausprobiert.** Es ist erlaubt, aber bei einer Sammlung ist die
+naheliegende Lesart „ersetze den Bestand". `PATCH` tut nachweislich das Richtige; für
+einen Versuch mit unklarem Ausgang gibt es hier keinen Anlass.
+
+Der Schlüssel eines Eintrags ist `sku` + `priceType` + `customer` + `customerGroup` +
+`amount` + `mcs`. `vatRate` und `priceUnit` werden aus einem vorhandenen Eintrag desselben
+Artikels übernommen statt erfunden — der Steuersatz gehört zum Artikel, nicht zu unserem
+Referenzwert.
+
 ## Woher die Preise kommen — gefunden am 18.08.2026
 
 **Die Routenliste macht das Raten überflüssig.** `GET /admin/` liefert alle 253
@@ -545,17 +584,18 @@ php bin/demo-seed.php [--loeschen]           # Beispieldaten (nur staging)
 1b. **Längste geplante Aktionsdauer**, damit `permanent_after_days` darübergesetzt werden
    kann. Ohne Aktionskennzeichen trägt diese Zahl allein — sie ist jetzt die wichtigste
    offene Angabe.
-2. **PSS-Write:** Upsert-Semantik (Update per Schlüssel vs. delete+create), Schreib-Endpunkt
-   und Auth. Der Lese-Payload ist geklärt (siehe oben); zu klären bleibt, ob `30_NET` /
-   `30_GROSS` als priceType überhaupt angelegt werden müssen.
+2. ~~PSS-Write~~ — **erledigt am 18.08.2026**, siehe oben. `PATCH` = Upsert, `DELETE` =
+   Leerung, neue priceTypes ohne Anmeldung. Offen bleibt allein die **Freigabe**, wann
+   `dry_run: false` in Produktion gesetzt wird.
 3. Zeitpunkt des täglichen DiVA-Preisimports je Shop (Cron danach).
 4. Entscheidung Anlauf: **Vorlauf** (30 Tage vor werblicher Nutzung produktiv) vs.
    **Backfill** (existiert eine Preishistorie der letzten 30+ Tage?).
 5. `alert_email` und die Shop-Kennungen je Markt für `markets.yml`.
-6. **`PREV_NET` / `PREV_GROSS` im PSS anlegen bzw. bestätigen** — und die
-   Leerungs-Semantik klären: Eintrag löschbar, oder `value: 0` mit der
-   Template-Konvention „0 = nicht anzeigen"? Der Rechenkern liefert `null` für „leeren";
-   welcher Weg daraus wird, entscheidet der Adapter.
+6. ~~PREV-priceTypes und Leerungs-Semantik~~ — **erledigt**: Neue priceTypes werden ohne
+   Anmeldung angenommen, die Leerung ist ein `DELETE`.
+6b. **Offene Grundsatzfrage (GRUBE, 18.08.2026): Soll `PREV_*` überhaupt jemals leer
+   sein?** Siehe Abschnitt „Vorstufen-Anker" — die Antwort entscheidet, ob der Tracker
+   die Leerung schreibt oder ob das Template über die Anzeige entscheidet.
 7. **`prev_price_max_days` von Legal kalibrieren lassen** (Vorgabe 42 Tage). Ebenso:
    Ist `permanent_after_days: 60` größer als die längste tatsächlich geplante Aktion?
 8. Verzeichnisschutz für `status/` im ISPConfig-Panel; GitHub-Repo `grubekg/y5x` anlegen.
