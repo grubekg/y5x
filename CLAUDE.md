@@ -909,8 +909,9 @@ Preisverlauf und Zustand, nur eben noch keine 30-Tage-Referenz.
 
 Stand 18.08.2026, nach Produktivstellung.
 
-1. **Zeitpunkt des täglichen DiVA-Preisimports je Shop.** Der Cron steht auf 05:30 und ist
-   damit geraten, nicht abgestimmt. Läuft der Import später, liest der Tageslauf den Stand
+1. **Zeitpunkt des täglichen DiVA-Preisimports je Shop.** Die Cronzeiten stehen auf
+   **20:30 (Staging)** und **21:30 (Produktion)** — abends, damit sie nach dem Import
+   liegen. Bestätigt ist der Importzeitpunkt noch nicht. Läuft der Import später, liest der Tageslauf den Stand
    von gestern — für einen Tag ohne Preisänderung folgenlos, für den Tag einer Aktion
    falsch.
 2. **Längste geplante Aktionsdauer**, damit `permanent_after_days` (derzeit 60) sicher

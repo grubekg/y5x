@@ -143,8 +143,15 @@ Produktiv  https://grube.tools/y5x/trigger.php?token=…
 Staging    https://grube.tools/staging/y5x/trigger.php?token=…
 ```
 
-Empfohlene Zeit: **05:30**, in jedem Fall **nach** dem täglichen DiVA-Preisimport.
-Staging versetzt, etwa 04:30.
+**Zeiten, im Panel angelegt (Angabe GRUBE, 18.08.2026):**
+
+| Umgebung | Uhrzeit |
+|---|---|
+| Integration/Staging | **20:30** |
+| Produktion | **21:30** |
+
+Abends statt morgens, damit der Lauf nach dem täglichen Preisimport liegt, und um eine
+Stunde versetzt, damit sich die beiden Umgebungen nicht überschneiden.
 
 Ein Lauf dauert rund **elf Minuten** für alle acht Märkte. Er überlebt den Web-Request
 nicht und wird deshalb abgelöst gestartet; die Seite antwortet sofort. Feuert der Cron
@@ -251,7 +258,8 @@ entscheidet.
 
 ## 7. Offene Punkte
 
-1. **Zeitpunkt des DiVA-Preisimports** — der Cron steht auf 05:30 und ist damit geraten.
+1. **Zeitpunkt des DiVA-Preisimports** — die Cronzeiten (20:30/21:30) sind so gesetzt,
+   dass sie danach liegen sollten; bestätigt ist der Importzeitpunkt noch nicht.
 2. **Längste geplante Aktionsdauer**, damit `permanent_after_days` sicher darüberliegt.
 3. **`prev_price_max_days` von Legal kalibrieren** (Vorgabe 42 Tage).
 4. **Soll `PREV_*` jemals leer sein?** Entscheidet, ob der Tracker die Leerung schreibt

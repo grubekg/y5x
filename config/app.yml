@@ -44,7 +44,12 @@ requests_per_minute: 330
 max_write_retries: 3
 
 alert_email: TODO
-run_after: "05:30"              # NACH dem DiVA-Preisimport — TODO(setup): Importzeitpunkt
+# Angelegt im ISPConfig-Panel als Aufruf von trigger.php (Angabe GRUBE, 18.08.2026):
+#   20:30  Integration/Staging
+#   21:30  Produktion
+# Abends statt morgens, damit der Lauf nach dem taeglichen Preisimport liegt. Die
+# beiden Umgebungen laufen versetzt, damit sie sich nicht ueberschneiden.
+run_after: "21:30"              # Produktion; Staging 20:30
 
 # true = rechnen und protokollieren, aber NICHT in den PSS schreiben.
 # Auslieferungszustand ist der Trockenmodus: Scharfschalten ist eine bewusste Handlung.
