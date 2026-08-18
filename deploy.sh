@@ -27,6 +27,7 @@ cp "$REPO/autoload.php" "$RUN/autoload.php"
 # nur von dort. Generiert statt gepflegt: Eine handgefuehrte zweite Kopie eines Passworts
 # ist immer die, die bei der naechsten Rotation vergessen wird.
 rsync -a --delete "$REPO/public/status/" "$WEB/status/"
+install -m 644 "$REPO/public/trigger.php" "$WEB/trigger.php"
 install -m 600 "$HOME_DIR/secrets/db.php" "$RUN/db.php"
 printf '%s' "$env" > "$RUN/ENV"
 

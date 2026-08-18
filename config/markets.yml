@@ -2,30 +2,37 @@
 # Antwort des Shops geprueft; weicht sie ab, bricht der Markt-Lauf ab (Alert). Ein
 # stillschweigend in der falschen Waehrung gefuehrter Referenzpreis waere eine falsche
 # Werbeaussage, kein Schoenheitsfehler.
-# `url` = Adresse des PRODUKTIVSHOPS, `url_staging` die der Integrationsumgebung.
+#
+# `url` = Adresse des PRODUKTIVSHOPS, `url_staging` die der Integrationsumgebung
+# (durchgehend `integ.` vor derselben Domain, geprueft 18.08.2026: alle acht antworten).
 # Beide zu fuehren ist keine Umstaendlichkeit: Ein Nachweis, der auf einer Staging-Seite
 # eine Produktiv-URL nennt, behauptet, dort sei geworben worden — und im Abmahnfall ist
 # genau die URL der Streitgegenstand. Die Umgebung entscheidet, welche gilt.
 #
-# Der Link auf einen Artikel entsteht daraus als
-# <url>/search/?q=<Artikelnummer> — der Shop leitet von dort direkt auf die Produktseite
-# mit vorgewaehltem Artikel um (geprueft 18.08.2026:
-# /search/?q=1000172720 -> /p/erdbohrgeraet-vertex-g250/100017/?articleNo=1000172720#it).
-# Das ist stabiler als ein selbst zusammengesetzter Produktpfad, der Slug und Produkt-ID
-# braeuchte, die wir gar nicht fuehren.
-# `price_group` = die Preisgruppe des anonymen Standardkunden in DIESEM Markt.
-# Ueberall `DEFAULT` — ausser in Schweden, wo sie `1` heisst (gemessen 18.08.2026 am
-# Sammelabzug: se fuehrt 5.167 Eintraege unter Gruppe 1 und keinen einzigen unter
-# DEFAULT). Das war kein Schoenheitsfehler: Der Markt blieb dadurch beim ersten Volllauf
-# vollstaendig leer, ohne dass irgendetwas nach Fehler aussah.
+# DREI MAERKTE LAUFEN NICHT UNTER `grube.<tld>` (Auskunft GRUBE, 18.08.2026):
+# Schweden ist `skogma.se`, Daenemark `dansk-skovkontor.dk`, die Schweiz
+# `de.rolandschmid.ch`. Eine aus dem Marktkuerzel zusammengebaute Adresse waere fuer
+# diese drei falsch — deshalb steht sie hier ausgeschrieben und wird nicht gerechnet.
+# Eingetragen ist jeweils die Form, die ohne Weiterleitung antwortet (PL, SE und DK
+# ohne `www.`).
+#
+# `language` = die Sprachdimension des MCS-Schluessels, unter dem der Shop den
+# ANGEWENDETEN Preis fuehrt (siehe unten). Sie folgt NICHT dem Marktkuerzel: Oesterreich
+# und die Schweiz lesen `de`, Daenemark `da`, Schweden `sv`.
+#
+# `price_group` wird vom Leseweg NICHT MEHR GEBRAUCHT — `promotionPrices` kennt keine
+# Preisgruppe. Der Eintrag bleibt als Befund stehen, weil er den alten Leseweg einmal
+# lautlos gekippt hat: Schweden fuehrt seine Standardkundengruppe als `1`, nicht als
+# `DEFAULT`, und der Markt lief dadurch vollstaendig leer durch, ohne dass irgendetwas
+# nach Fehler aussah.
 markets:
-  DE: { currency: EUR, price_group: DEFAULT, shop: TODO, url: "https://www.grube.de", url_staging: "https://integ.grube.de", write_enabled: true,  active: true }
-  AT: { currency: EUR, price_group: DEFAULT, shop: TODO, url: TODO, write_enabled: true,  active: true }
-  FR: { currency: EUR, price_group: DEFAULT, shop: TODO, url: TODO, write_enabled: true,  active: true }
-  PL: { currency: PLN, price_group: DEFAULT, shop: TODO, url: TODO, write_enabled: true,  active: true }
-  SK: { currency: EUR, price_group: DEFAULT, shop: TODO, url: TODO, write_enabled: true,  active: true }
-  SE: { currency: SEK, price_group: "1", shop: TODO, url: TODO, write_enabled: true,  active: true }
-  DK: { currency: DKK, price_group: DEFAULT, shop: TODO, url: TODO, write_enabled: true,  active: true }
+  DE: { currency: EUR, language: de, price_group: DEFAULT, shop: TODO, url: "https://www.grube.de",            url_staging: "https://integ.grube.de",            write_enabled: true,  active: true }
+  AT: { currency: EUR, language: de, price_group: DEFAULT, shop: TODO, url: "https://www.grube.at",            url_staging: "https://integ.grube.at",            write_enabled: true,  active: true }
+  FR: { currency: EUR, language: fr, price_group: DEFAULT, shop: TODO, url: "https://www.grube.fr",            url_staging: "https://integ.grube.fr",            write_enabled: true,  active: true }
+  PL: { currency: PLN, language: pl, price_group: DEFAULT, shop: TODO, url: "https://grube.pl",                url_staging: "https://integ.grube.pl",            write_enabled: true,  active: true }
+  SK: { currency: EUR, language: sk, price_group: DEFAULT, shop: TODO, url: "https://www.grube.sk",            url_staging: "https://integ.grube.sk",            write_enabled: true,  active: true }
+  SE: { currency: SEK, language: sv, price_group: "1",     shop: TODO, url: "https://skogma.se",               url_staging: "https://integ.skogma.se",           write_enabled: true,  active: true }
+  DK: { currency: DKK, language: da, price_group: DEFAULT, shop: TODO, url: "https://dansk-skovkontor.dk",     url_staging: "https://integ.dansk-skovkontor.dk", write_enabled: true,  active: true }
   # Die Schweizer Preisbekanntgabeverordnung folgt NICHT der EU-30-Tage-Logik.
   # Getrackt wird trotzdem, damit Historie vorliegt, wenn Legal entscheidet.
-  CH: { currency: CHF, price_group: DEFAULT, shop: TODO, url: TODO, write_enabled: false, active: true }
+  CH: { currency: CHF, language: de, price_group: DEFAULT, shop: TODO, url: "https://de.rolandschmid.ch",      url_staging: "https://integ.de.rolandschmid.ch",  write_enabled: false, active: true }

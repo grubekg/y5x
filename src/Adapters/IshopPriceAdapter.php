@@ -9,20 +9,27 @@ use Grube\Price30\Support\Money;
 /**
  * Die einzige Preisquelle: der Shop.
  *
- * **Gefunden am 18.08.2026 durch die Routenliste unter `/admin/`** — sie liefert alle
- * 253 Admin-Endpunkte als JSON, was das Raten überflüssig macht. Der maßgebliche
- * Endpunkt ist:
+ * **Gelesen wird der Object Storage, und zwar zwei Felder an zwei MCS-Längen** —
+ * `promotionPrices`/`netPromotionPrices` am langen Schlüssel (mit `channel`, `language`,
+ * `store`) für den angewendeten Preis, `prices`/`netPrices` am kurzen für den
+ * Listenpreis, wo keine Aktion läuft. Siehe `allePreise()` für Begründung und Messung.
  *
- *     GET /admin/pssoverview/prices/shop/get/{sku}/{customerGroup}/{customer}
- *     -> {"prices": {"prices": {"0": "949,00 "}, "prices_net": {"0": "797,48 "}}}
+ * **Zwei naheliegende Endpunkte sind blind für Aktionen und dürfen nicht benutzt
+ * werden** (beide gemessen am 18.08.2026 an Artikel 3049187041, für den DE eine
+ * 20-%-Aktion führt — der Shop kassiert 159,20 €):
  *
- * `prices.prices` ist brutto, `prices.prices_net` netto, der Schlüssel `"0"` ist die
- * Menge (`amount`) — genau die Grundmenge, die das Briefing verlangt. Rund 0,12 s je
- * Abruf.
+ * | Endpunkt | Antwort | |
+ * |---|---|---|
+ * | `/admin/pssoverview/prices/shop/get/…` | **199,00** | heißt „shop", ist es aber nicht |
+ * | `/admin/pssoverview/prices/activeCache/get/…` | 199,00 | trägt `excludePromotions: true` |
  *
- * **Bewusst NICHT `/admin/pssoverview/prices/activeCache/get/...`:** Der liefert die
- * rohen PSS-Einträge mitsamt `provider: {"excludePromotions": true}` — also den Preis
- * OHNE Aktionen. `.../shop/get/...` ist die Sicht des Shops.
+ * Der erste sah lange nach der richtigen Quelle aus, weil sein Name das nahelegt und
+ * seine Antwort genau die Form hat, die man braucht. Er liefert den Listenpreis. Für
+ * einzelne Artikel wird deshalb `os/info` gelesen (siehe `preis()`).
+ *
+ * **Der PSS ist Ziel, niemals Quelle.** Er führt zu einem Artikel dutzende
+ * konkurrierende Einträge (212 allein für 3049187041) über Kundengruppen und Kanäle
+ * hinweg, aus denen erst der Shop den einen gültigen bildet.
  *
  * **Kein Aktionskennzeichen wird gelesen**, auch wenn der Shop unter
  * `/admin/publishedPromotions` eines führen mag: Aktionen stammen aus verschiedenen
@@ -89,7 +96,7 @@ final class IshopPriceAdapter
     }
 
     /**
-     * **Alle Preise aller Märkte in zwei Anfragen** statt einer je Artikel.
+     * **Alle Preise aller Märkte in vier Anfragen** statt einer je Artikel.
      *
      * Der Einzelweg (`/admin/pssoverview/prices/shop/get/…`) fragt je Artikel und kennt
      * **keinen Markt-Parameter** — er liefert nur den Standard-Shop. Für acht Märkte war
@@ -100,63 +107,146 @@ final class IshopPriceAdapter
      *
      * | | Einzelabruf | Sammelabzug |
      * |---|---|---|
-     * | Anfragen | 35.641 je Markt | **2 insgesamt** |
-     * | Dauer | ~108 min (gedrosselt) | ~10 s laden, ~115 s zerlegen |
+     * | Anfragen | 35.641 je Markt | **4 insgesamt** |
+     * | Dauer | ~108 min (gedrosselt) | ~40 s laden, ~4 min zerlegen |
      * | Märkte | nur der Standard-Shop | **alle acht** |
      * | Ratenbegrenzung | kritisch | belanglos |
      *
-     * **Die Auflösung ist der heikle Teil und wurde deshalb geprüft.** Der Abzug enthält
-     * rohe `PriceEntry`-Listen mit Zeitfenstern, Preisgruppen und mehreren konkurrierenden
-     * Einträgen; welcher gilt, entscheidet sonst der Shop. Gefiltert wird auf
-     * `priceGroup='DEFAULT'`, `customer='0'`, `amount=0` und ein Gültigkeitsfenster, das
-     * heute enthält. Gegen den Einzel-Endpunkt gemessen (18.08.2026, 200 zufällige
-     * Artikel): **200 von 200 übereinstimmend, null Abweichungen.**
+     * ## Zwei Felder, zwei MCS-Längen — und beide werden gebraucht
+     *
+     * Der Shop führt den Preis eines Artikels an **zwei** getrennten Stellen, und keine
+     * davon allein ergibt den Preis, den der Kunde zahlt (Auskunft GRUBE, 18.08.2026):
+     *
+     * | Feld | MCS | Inhalt |
+     * |---|---|---|
+     * | `prices` / `netPrices` | **nur kurz** `[brand=… country=… currency=…]` | Listenpreis |
+     * | `promotionPrices` / `netPromotionPrices` | **nur lang** (mit `channel`, `language`, `store`) | angewendeter Preis |
+     *
+     * Gelesen wird deshalb **beides**: Gibt es am langen Standard-MCS
+     * (`channel=web`, Sprache des Marktes, `store` leer) einen Promotionspreis, ist das
+     * der Preis des Shops. Fehlt er, gilt der Listenpreis vom kurzen MCS.
+     *
+     * **Genau das war der Fehler, der diesem Werkzeug seine Grundlage entzogen hätte.**
+     * Gelesen wurde ausschließlich `prices` am kurzen MCS. Für Artikel 3049187041 mit
+     * 20 % Aktion auf DE stand dort 199,00 €, während der Shop 159,20 € kassierte — der
+     * Tracker hätte 199,00 € als „unveränderten" Preis über Wochen fortgeschrieben und
+     * genau die Aussage belegt, die falsch ist. Der Fehler war lautlos: Beide Zahlen
+     * sehen richtig aus, und `promotionPrices` am **kurzen** MCS zeigt ebenfalls 199,00.
+     * Erst der lange MCS führt die Aktion.
+     *
+     * **Nachgemessen gegen den Affiliate-Export** (`/affiliateExport/preisschreiber_de/`,
+     * der die Preise ausspielt, mit denen geworben wird): 34.551 von 34.551 Artikeln
+     * brutto identisch, **null Abweichungen** — und dieselben 3.331 Artikel in Aktion,
+     * die der alte Weg allesamt übersah (rund 10 % des Sortiments).
+     *
+     * Netto kommt aus `netPromotionPrices` bzw. `netPrices` — also **aus derselben
+     * Quelle wie Brutto**, nie gerechnet. Das ist keine Bequemlichkeit, sondern die
+     * Konsistenzregel aus § 6.1: Ein Paar aus zwei verschiedenen Ereignissen wäre ein
+     * Referenzpreis, den es so nie gegeben hat.
+     *
+     * ## Die Auflösung ist der heikle Teil und wurde deshalb geprüft
+     *
+     * Der Abzug enthält rohe Eintragslisten mit Zeitfenstern, Preisgruppen und
+     * Staffelmengen; welcher Eintrag gilt, entscheidet sonst der Shop.
+     *
+     * - `prices`: gefiltert auf `priceGroup`, `customer='0'`, `amount=0` und ein
+     *   Gültigkeitsfenster, das heute enthält. Gegen den Einzel-Endpunkt gemessen
+     *   (200 zufällige Artikel): 200 von 200 übereinstimmend.
+     * - `promotionPrices`: Die Zelle ist eine Staffelkarte `{0=[…], 10=[…]}`. **Nur
+     *   Schlüssel 0 ist die Grundmenge**; Schlüssel 10 ist der Mengenpreis ab zehn Stück
+     *   und lag bei 1.692 Artikeln darunter — ungefiltert wäre ein Mengenrabatt als
+     *   Endkundenpreis in den Nachweis gewandert. Innerhalb von Schlüssel 0 wurde über
+     *   alle 34.866 DE-Artikel **kein einziger** Fall mit zwei gleichzeitig gültigen
+     *   Einträgen gefunden; die Auflösung ist eindeutig.
      *
      * Die Marke `dominicus` bleibt außen vor — das ist der B2B-Shop (Auskunft GRUBE).
      *
-     * @param string[] $mcsListe  gesuchte MCS-Schlüssel
-     * @return array<string, array<string, array{gross:string, net:string}>>  mcs => sku => Preise
+     * @param array<string, array{mcs_kurz:string, mcs_lang:string, gruppe:string}> $maerkte
+     * @return array<string, array<string, array{gross:string, net:string, quelle:string, vat:?string}>>
+     *         Marktcode => sku => Preise
      */
-    public function allePreise(array $mcsListe, array $preisgruppen = []): array
+    public function allePreise(array $maerkte): array
     {
-        $out = [];
-        foreach ($mcsListe as $mcs) { $out[$mcs] = []; }
-
-        foreach ([['prices', 'gross'], ['netPrices', 'net']] as [$attribut, $feld]) {
-            $datei = \sys_get_temp_dir() . '/y5x-' . $attribut . '-' . \getmypid() . '.html';
-            try {
-                $this->http->herunterladen('/admin/os/overview', [
-                    'searchType' => 'search_attr',
-                    'searchEntries[0].negate' => 'POS',
-                    'searchEntries[0].name'   => $attribut,
-                    'searchEntries[0].comp'   => 'EXISTS',
-                    'searchEntries[0].value'  => '',
-                    'onlyValid' => 'true',
-                ], $datei, 900);
-                $this->zerlege($datei, $mcsListe, $feld, $out, $preisgruppen);
-            } finally {
-                @\unlink($datei);
-            }
+        $promo = [];
+        $liste = [];
+        foreach ($maerkte as $code => $_) {
+            $promo[$code] = [];
+            $liste[$code] = [];
         }
-        // Nur Artikel behalten, für die BEIDE Werte vorliegen — ein halbes Paar wäre
-        // wertlos, weil die Konsistenzregel beide aus demselben Ereignis verlangt.
-        foreach ($out as $mcs => $artikel) {
-            foreach ($artikel as $sku => $p) {
-                if (!isset($p['gross'], $p['net'])) {
-                    unset($out[$mcs][$sku]);
+
+        foreach ([['promotionPrices', 'gross'], ['netPromotionPrices', 'net']] as [$attribut, $feld]) {
+            $this->abzug($attribut, $maerkte, 'mcs_lang', $feld, $promo);
+        }
+        foreach ([['prices', 'gross'], ['netPrices', 'net']] as [$attribut, $feld]) {
+            $this->abzug($attribut, $maerkte, 'mcs_kurz', $feld, $liste);
+        }
+
+        // Zusammenfuehren. Ein halbes Paar ist wertlos, weil die Konsistenzregel beide
+        // Werte aus DEMSELBEN Ereignis verlangt — deshalb wird nie ueber die Quellen
+        // hinweg gemischt: entweder beide aus der Aktion oder beide aus der Liste.
+        $out = [];
+        foreach ($maerkte as $code => $_) {
+            $out[$code] = [];
+            $skus = $promo[$code] + $liste[$code];
+            foreach (\array_keys($skus) as $sku) {
+                $l = $liste[$code][$sku] ?? [];
+                // `vatRate` steht nur an der Listenzeile, gilt aber fuer den Artikel —
+                // also auch dann, wenn der Preis selbst aus der Aktion stammt.
+                $vat = $l['vat'] ?? null;
+                $p = $promo[$code][$sku] ?? [];
+                if (isset($p['gross'], $p['net'])) {
+                    $out[$code][$sku] = ['gross' => $p['gross'], 'net' => $p['net'],
+                                         'quelle' => 'aktion', 'vat' => $vat];
+                    continue;
+                }
+                if (isset($l['gross'], $l['net'])) {
+                    $out[$code][$sku] = ['gross' => $l['gross'], 'net' => $l['net'],
+                                         'quelle' => 'liste', 'vat' => $vat];
                 }
             }
         }
         return $out;
     }
 
-    /** Streamend zerlegen — 191 MB je Datei passen nicht in den Arbeitsspeicher. */
-    private function zerlege(string $datei, array $mcsListe, string $feld, array &$out,
-                             array $preisgruppen = []): void
+    /**
+     * Einen Sammelabzug laden und streamend in `$ziel` einsortieren.
+     *
+     * @param array<string, array{mcs_kurz:string, mcs_lang:string, gruppe:string}> $maerkte
+     * @param string $mcsFeld  welcher MCS des Marktes gesucht wird (`mcs_kurz`|`mcs_lang`)
+     */
+    private function abzug(string $attribut, array $maerkte, string $mcsFeld, string $feld,
+                           array &$ziel): void
+    {
+        $datei = \sys_get_temp_dir() . '/y5x-' . $attribut . '-' . \getmypid() . '.html';
+        try {
+            $this->http->herunterladen('/admin/os/overview', [
+                'searchType' => 'search_attr',
+                'searchEntries[0].negate' => 'POS',
+                'searchEntries[0].name'   => $attribut,
+                'searchEntries[0].comp'   => 'EXISTS',
+                'searchEntries[0].value'  => '',
+                'onlyValid' => 'true',
+            ], $datei, 900);
+            $this->zerlege($datei, $maerkte, $mcsFeld, $feld, $ziel,
+                \str_contains($attribut, 'romotion'));
+        } finally {
+            @\unlink($datei);
+        }
+    }
+
+    /** Streamend zerlegen — die Dateien sind bis 310 MB gross und passen nicht in den Speicher. */
+    private function zerlege(string $datei, array $maerkte, string $mcsFeld, string $feld,
+                             array &$out, bool $istAktion): void
     {
         $fp = \fopen($datei, 'r');
         if ($fp === false) {
             return;
+        }
+        // Suchindex MCS => Marktcode. Ohne ihn kostete jede Zeile eine Schleife ueber
+        // alle Maerkte; bei 1,2 Millionen Zeilen ist das messbar.
+        $index = [];
+        foreach ($maerkte as $code => $m) {
+            $index[$m[$mcsFeld]] = $code;
         }
         $rest = '';
         $jetzt = \time();
@@ -168,36 +258,28 @@ final class IshopPriceAdapter
                 $rest = \substr($rest, $b + 5);
 
                 $treffer = null;
-                foreach ($mcsListe as $mcs) {
-                    if (\str_contains($zeile, $mcs)) { $treffer = $mcs; break; }
+                foreach ($index as $mcs => $code) {
+                    if (\str_contains($zeile, $mcs)) { $treffer = $code; break; }
                 }
                 if ($treffer === null || !\preg_match('~Item%23(\d+)~', $zeile, $s)) {
                     continue;
                 }
                 \preg_match_all('~<td[^>]*>(.*?)</td>~s', $zeile, $c);
                 $wert = \html_entity_decode(\strip_tags($c[1][3] ?? ''));
-                // Die Preisgruppe des anonymen Standardkunden ist NICHT ueberall
-                // `DEFAULT`: In Schweden heisst sie `1`. Fest verdrahtet liess das den
-                // ganzen Markt leer durchlaufen, ohne dass etwas nach Fehler aussah.
-                $gruppe = $preisgruppen[$treffer] ?? 'DEFAULT';
-                foreach (\preg_split('~(?<=\}),\s*~', \trim($wert, "[] \n")) ?: [] as $eintrag) {
-                    if (!\str_contains($eintrag, "priceGroup='" . $gruppe . "'")
-                        || !\str_contains($eintrag, "customer='0'")
-                        || !\str_contains($eintrag, 'amount=0,')) {
-                        continue;
+                if ($istAktion) {
+                    $preis = $this->ausAktion($wert, $jetzt);
+                } else {
+                    $preis = $this->ausListe($wert, $maerkte[$treffer]['gruppe'], $jetzt);
+                    // Der Steuersatz gehoert zum Artikel und steht hier ohnehin schon da.
+                    // Ihn stattdessen je Artikel beim PSS zu erfragen kostete einen
+                    // eigenen Abruf pro Artikel — beim Erstlauf 35.641 Anfragen, die
+                    // nichts liefern, was nicht schon in dieser Datei steht.
+                    if ($preis !== null && \preg_match('~vatRate=([\d.]+)~', $wert, $v)) {
+                        $out[$treffer][$s[1]]['vat'] = $v[1];
                     }
-                    if (!\preg_match('~price=([\d.]+)~', $eintrag, $p)) {
-                        continue;
-                    }
-                    if (\preg_match('~startDate=([^,]+),~', $eintrag, $sd)
-                        && \strtotime(\trim($sd[1])) > $jetzt) {
-                        continue;
-                    }
-                    if (\preg_match('~endDate=([^,]+),~', $eintrag, $ed)) {
-                        $bis = \strtotime(\trim($ed[1]));
-                        if ($bis !== false && $bis < $jetzt) { continue; }
-                    }
-                    $out[$treffer][$s[1]][$feld] = $p[1];
+                }
+                if ($preis !== null) {
+                    $out[$treffer][$s[1]][$feld] = $preis;
                 }
             }
             if (\strlen($rest) > 20_000_000) {
@@ -208,24 +290,134 @@ final class IshopPriceAdapter
     }
 
     /**
-     * Brutto- und Nettopreis der Grundmenge für einen Artikel.
+     * Der gueltige Aktionspreis der Grundmenge aus einer `promotionPrices`-Zelle.
      *
-     * @return array{net:string, gross:string}|null  null = kein Preis im Shop
+     * Aufbau: `{0=[PromotionPriceEntry{price=… , startDate=…, endDate=…}], 10=[…]}`.
+     * Der Schluessel ist die Staffelmenge — **nur 0 ist die Grundmenge.**
      */
-    public function preis(string $sku): ?array
+    private function ausAktion(string $wert, int $jetzt): ?string
     {
-        $d = $this->http->json(\sprintf('/admin/pssoverview/prices/shop/get/%s/%s/%s',
-            \rawurlencode($sku), \rawurlencode($this->customerGroup), \rawurlencode($this->customer)));
-        $p = $d['prices'] ?? null;
-        if (!\is_array($p)) {
+        $wert = \trim($wert);
+        if ($wert === '' || $wert === '{}' || $wert[0] !== '{') {
             return null;
         }
-        $gross = $this->betrag($p['prices']['0'] ?? null);
-        $net   = $this->betrag($p['prices_net']['0'] ?? null);
-        if ($gross === null || $net === null) {
+        // Schluessel 0 auf oberster Ebene herausschneiden, bis zum naechsten Schluessel.
+        if (!\preg_match('~(?:^\{|,\s*)0=\[(.*?)\](?:,\s*\d+=\[|\}$)~s', $wert, $m)) {
             return null;
         }
-        return ['net' => $net, 'gross' => $gross];
+        foreach (\preg_split('~(?<=\}),\s*~', $m[1]) ?: [] as $eintrag) {
+            if (!\preg_match('~price=([\d.]+)~', $eintrag, $p)) {
+                continue;
+            }
+            if (!$this->imFenster($eintrag, $jetzt)) {
+                continue;
+            }
+            return $p[1];
+        }
+        return null;
+    }
+
+    /**
+     * Der gueltige Listenpreis der Grundmenge aus einer `prices`-Zelle.
+     *
+     * Die Preisgruppe des anonymen Standardkunden ist NICHT ueberall `DEFAULT`: In
+     * Schweden heisst sie `1`. Fest verdrahtet liess das den ganzen Markt leer
+     * durchlaufen, ohne dass etwas nach Fehler aussah.
+     */
+    private function ausListe(string $wert, string $gruppe, int $jetzt): ?string
+    {
+        foreach (\preg_split('~(?<=\}),\s*~', \trim($wert, "[] \n")) ?: [] as $eintrag) {
+            if (!\str_contains($eintrag, "priceGroup='" . $gruppe . "'")
+                || !\str_contains($eintrag, "customer='0'")
+                || !\str_contains($eintrag, 'amount=0,')) {
+                continue;
+            }
+            if (!\preg_match('~price=([\d.]+)~', $eintrag, $p)) {
+                continue;
+            }
+            if (!$this->imFenster($eintrag, $jetzt)) {
+                continue;
+            }
+            return $p[1];
+        }
+        return null;
+    }
+
+    /** Gilt der Eintrag heute? Fehlende Grenzen gelten als offen. */
+    private function imFenster(string $eintrag, int $jetzt): bool
+    {
+        if (\preg_match('~startDate=([^,]+),~', $eintrag, $sd)
+            && \strtotime(\trim($sd[1])) > $jetzt) {
+            return false;
+        }
+        if (\preg_match('~endDate=([^,}]+)~', $eintrag, $ed)) {
+            $bis = \strtotime(\trim($ed[1]));
+            if ($bis !== false && $bis < $jetzt) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Brutto- und Nettopreis der Grundmenge für **einen** Artikel in **einem** Abruf.
+     *
+     * Gedacht für gezielte Nachläufe. Der naheliegende Weg —
+     * `/admin/pssoverview/prices/shop/get/{sku}/{gruppe}/{kunde}` — sieht harmlos aus
+     * und war es nicht: Er antwortet in 0,13 s, nennt sich „shop" und liefert
+     * trotzdem den **Listenpreis ohne Aktion**. Für Artikel 3049187041 gab er 199,00 €
+     * zurück, während der Shop 159,20 € kassierte (gemessen 18.08.2026). Ein Nachlauf
+     * über diesen Weg hätte den falschen Preis in den Nachweis geschrieben — und zwar
+     * nur für den nachgelaufenen Artikel, also besonders schwer zu bemerken.
+     *
+     * `os/info` führt dagegen dieselben Felder wie der Sammelabzug, mitsamt allen MCS:
+     * rund 320 KB und 2 s je Artikel. Aufgelöst wird exakt wie im Sammelweg — gleiche
+     * Vorrangregel, gleiche Filter, damit ein Nachlauf nicht anders rechnet als der
+     * Tageslauf.
+     *
+     * @param array{mcs_kurz:string, mcs_lang:string, gruppe:string} $mcs
+     * @return array{net:string, gross:string, quelle:string}|null  null = kein Preis im Shop
+     */
+    public function preis(string $sku, array $mcs): ?array
+    {
+        $html = $this->http->get('/admin/os/info', [
+            'id' => 'com.novomind.ishop.core.Item#' . $sku,
+            'page' => '0', 'pageSize' => '4000',
+        ])['body'];
+
+        $jetzt = \time();
+        $felder = ['promotionPrices' => [], 'netPromotionPrices' => [],
+                   'prices' => [], 'netPrices' => []];
+        $feld = '';
+        \preg_match_all('~<tr[^>]*>(.*?)</tr>~is', $html, $zeilen);
+        foreach ($zeilen[1] as $zeile) {
+            \preg_match_all('~<t[dh][^>]*>(.*?)</t[dh]>~is', $zeile, $c);
+            $z = \array_map(
+                static fn ($x) => \trim(\html_entity_decode(\strip_tags($x), \ENT_QUOTES | \ENT_HTML5, 'UTF-8')),
+                $c[1]);
+            if (\count($z) < 6) {
+                continue;
+            }
+            if ($z[1] !== '') { $feld = $z[1]; }
+            if (!isset($felder[$feld])) {
+                continue;
+            }
+            $felder[$feld][$z[2]] = \implode(' ', \array_slice($z, 5));
+        }
+
+        // Vorrang wie im Sammelweg: Aktion am langen MCS schlaegt Liste am kurzen, und
+        // Brutto und Netto kommen immer aus DERSELBEN Quelle (Konsistenzregel § 6.1).
+        $gross = $this->ausAktion($felder['promotionPrices'][$mcs['mcs_lang']] ?? '', $jetzt);
+        $net   = $this->ausAktion($felder['netPromotionPrices'][$mcs['mcs_lang']] ?? '', $jetzt);
+        if ($gross !== null && $net !== null) {
+            return ['net' => $net, 'gross' => $gross, 'quelle' => 'aktion'];
+        }
+        $gross = $this->ausListe($felder['prices'][$mcs['mcs_kurz']] ?? '', $mcs['gruppe'], $jetzt);
+        $net   = $this->ausListe($felder['netPrices'][$mcs['mcs_kurz']] ?? '', $mcs['gruppe'], $jetzt);
+        if ($gross !== null && $net !== null) {
+            return ['net' => $net, 'gross' => $gross, 'quelle' => 'liste'];
+        }
+        return null;
     }
 
     /**

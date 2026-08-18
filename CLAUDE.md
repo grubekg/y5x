@@ -198,29 +198,39 @@ Vorhandene priceTypes je SKU: `PRICE_NET/GROSS`, `RRP_NET/GROSS`, `UNREBATED_NET
 Offene Datenauffälligkeit: Zwei Zeilen tragen ein doppelt maskiertes
 `provider`-Feld (`{\"excludePromotions\": \"false\"}`) — beim Auswerten robust behandeln.
 
-## Der Volllauf: 5,6 Minuten für acht Märkte (gemessen 18.08.2026)
+## Der Volllauf: 10,7 Minuten für acht Märkte (gemessen 18.08.2026, Integ)
 
-Vollständiger Lauf über alle aktiven Märkte und den gesamten Bestand, im Normalzustand
-(alle Preise unverändert — die realistische tägliche Form):
+Vollständiger Lauf über alle aktiven Märkte und den gesamten Bestand, mit der
+korrigierten Preisquelle (vier Sammelabzüge statt zwei):
 
 | | |
 |---|---|
-| **Gesamtdauer** | **337 s = 5,6 min** |
-| davon Sammelabzug (einmalig) | ~140 s — laden und zerlegen von 2 × 191 MB |
-| davon die acht Märkte | 199 s (DE 30 · AT 31 · FR 30 · PL 21 · SK 18 · SE 12 · DK 27 · CH 30) |
-| gelesen | 285.184 Artikel × Markt |
-| getrackt | 231.510 (der Rest ist im jeweiligen Markt nicht geführt) |
-| Anomalien verworfen | 90 |
+| **Gesamtdauer** | **643 s = 10,7 min** |
+| davon Sammelabzug (einmalig für ALLE Märkte) | 490 s — laden und zerlegen von ~1 GB |
+| davon die acht Märkte | 153 s (DE 61 · AT 20 · FR 10 · PL 3 · SK 4 · SE 7 · DK 28 · CH 27) |
+| gelesen | 278.928 Artikel × Markt |
+| Preisereignisse angelegt | 180.239 |
+| im Markt nicht geführt | 98.753 |
+| Anomalien verworfen | 58 |
 | Fehler | **0** |
-| Speicherbedarf | 3 GB erlaubt, ~180 MB benutzt |
-| `price_events` | 48,2 MB für 231.551 Intervalle |
 
-**Der Sammelabzug ist der Fixkostenanteil** und wächst nicht mit der Artikelzahl. Die
-Märkte selbst kosten rund 0,9 ms je Artikel — das ist Datenbankarbeit, kein Netz.
+**Der Sammelabzug ist der Fixkostenanteil** und wächst nicht mit der Artikelzahl: Dieselben
+vier Dateien enthalten alle acht Märkte, deshalb werden sie einmal geladen und achtmal
+ausgewertet. Ein Lauf je Markt würde 8 GB statt 1 GB bedeuten.
 
-Für den Nachtlauf heißt das: Ein Zeitfenster von **15 Minuten** ist auch mit Reserve
-großzügig bemessen. Schreibvorgänge kommen obendrauf, aber nur für tatsächlich geänderte
-Werte (Delta-Write) — im eingeschwungenen Betrieb sind das wenige je Tag.
+Die Zahlen für PL (3.639), SK (89) und SE (5.361) sind **kein** Datenverlust: Auf der
+Integration sind diese Märkte nur dünn bepreist (Auskunft GRUBE). Umgekehrt gibt es
+Artikel, die es nur in einem Markt gibt — die Marktmengen sind nicht ineinander enthalten.
+
+Für den Nachtlauf heißt das: Ein Zeitfenster von **20 Minuten** ist mit Reserve bemessen.
+
+### „davon aus promotionPrices" ist NICHT „in Aktion"
+
+Die Laufausgabe nennt je Markt, wie viele Werte aus `promotionPrices` stammen — und das
+sind praktisch 100 %. Das heißt **nicht**, dass alles reduziert ist: Der Shop führt den
+angewendeten Preis für fast jeden Artikel dort, auch wenn er dem Listenpreis entspricht.
+Die Zahl sagt, WOHER der Wert kam. Wie viele Artikel tatsächlich ermäßigt sind, sagt
+allein der Vergleich mit der Referenz — also das Dashboard, nicht der Lauf.
 
 ### Anomalien im echten Bestand
 
@@ -235,65 +245,82 @@ Die 90 verworfenen Datensätze sind keine Rundungsfehler:
 Der dritte Fall ist der interessanteste — in Polen etwa `netto 5.405,00 / brutto 4.800,00`.
 Jeder verworfene Datensatz steht mit Artikelnummer und Begründung im `run_log`.
 
-## ⚠️ OFFENER GRUNDSATZFEHLER: Die Preisquelle sieht keine Aktionen (18.08.2026)
+## Der Grundsatzfehler und seine Lösung: Aktionen leben am langen MCS (18.08.2026)
 
-**Der Test, der alles auf den Kopf stellt.** GRUBE hat auf der Integ für Artikel
-`3049187041` (Markt DE) eine **20-%-Aktion** aktiviert. Der Shop verlangt seitdem
-**159,20 €**. Gelesen haben wir **199,00 €**.
+**Der Test, der alles auf den Kopf stellte.** GRUBE aktivierte auf der Integ für Artikel
+`3049187041` (Markt DE) eine **20-%-Aktion**. Der Shop verlangte seitdem **159,20 €**.
+Gelesen haben wir **199,00 €** — und zwar aus jeder Quelle, die wir kannten, auch aus
+der, die „promotion" im Namen trägt.
 
-| Quelle | Preis |
-|---|---|
-| **Storefront `integ.grube.de`** | **159,20 €** ← was tatsächlich verlangt wird |
-| `/admin/pssoverview/prices/shop/get/…` | 199,00 € |
-| Object Storage `prices` | 199,00 € |
-| Object Storage **`promotionPrices`** | 199,00 € |
-| Object Storage `netPromotionPrices` | 167,23 € (= netto zu 199,00) |
-| Object Storage `unrebatedPrices` | 199,00 € |
+**Der Fehler lag nicht am Shop, sondern an der Schlüssellänge.** Der Object Storage führt
+Preise je MCS, und es gibt zwei Längen. Wir lasen die kurze:
 
-**Keine einzige Admin- oder PSS-Quelle kennt die Aktion** — auch nicht die, die
-„promotion" im Namen trägt. Auf der Produktion zeigt dieselbe Abfrage 199,00 €, dort
-läuft die Aktion nicht; der Unterschied liegt also an der Aktion, nicht an der Umgebung.
-
-**Damit ist die Kernanforderung verletzt.** § 1 verlangt „den im Shop tatsächlich
-angewendeten Endpreis". Ein Tracker auf dieser Quelle würde eine Aktion **nie** bemerken:
-keine Zustandsänderung, keine eingefrorene Referenz, und in `price_events` stünde für
-jeden Aktionstag der Nicht-Aktionspreis. Die Beweisgrundlage behauptete dann einen Preis,
-der nie verlangt wurde — das Gegenteil dessen, wofür es das Werkzeug gibt.
-
-Das bestätigt die frühere Auskunft („es gibt Aktionen, die im PSS nicht abgebildet sind")
-in der schärfsten Form: Sie sind **nirgends** in den Schnittstellen abgebildet.
-
-### Was die Aktion kennt: die Storefront
-
-Die Produktseite führt den angewendeten Preis **maschinenlesbar je Artikel** als
-schema.org-Angebot:
-
-```json
-{"@type":"Offer","sku":"3049187041","price":"159.20","priceCurrency":"EUR"}
-```
-
-Ein `AggregateOffer` je Produkt enthält ein `Offer` je Artikel — eine Seite deckt also
-alle Varianten ab. `highPrice`/`lowPrice` liefern zusätzlich die Spanne.
-
-### Geprüfte Sackgassen
-
-* `/admin/downloadItemFeed` — **HTTP 500 nach 222 s**.
-* `/admin/publishedPromotions`, `/admin/promotions` — **404** auf beiden Umgebungen.
-* `productDownloader/info` — `availableFiles: []`.
-
-Es gibt also weder einen Feed mit angewendeten Preisen noch eine Liste laufender
-Aktionen, über die sich die Storefront-Abfrage auf betroffene Artikel eingrenzen ließe.
-
-### Die Optionen — Entscheidung offen
-
-| Weg | Aufwand | Bewertung |
+| MCS | `promotionPrices` | `netPromotionPrices` |
 |---|---|---|
-| **Produktseiten lesen** (~13.500 je Markt) | bei 800 Anfragen/2 min rund **34 min je Markt**, 4,5 h für acht | funktioniert, ist aber ein Vielfaches des heutigen Laufs und belastet die eigene Storefront |
-| **Aktionsliste vom Shop-Team** | offen | wäre der Hebel: Sammelabzug für die Grundpreise, Storefront nur für die wenigen Artikel in Aktion |
-| **Preisendpunkt mit Aktionen** | offen | die saubere Lösung — muss das Shop-Team liefern |
+| `[brand=grube country=de currency=EUR]` | 199,00 ← **das lasen wir** | 167,23 |
+| `[brand=grube channel=web country=de currency=EUR language=de store=]` | **159,20** ✅ | **133,78** ✅ |
+| `[… channel=webapp …]` | 159,20 | 133,78 |
+| `[… channel=webwhitelabel …]` | 159,20 | 133,78 |
 
-**Bis das geklärt ist, darf `dry_run: false` in der Produktion nicht gesetzt werden.** Die
-Werte wären systematisch zu hoch, sobald irgendwo eine Aktion läuft.
+Auskunft GRUBE dazu, die den Weg entschied:
+
+> „Preise gibt es für kurze, promos aber nur für lange. Wir brauchen ja beides im
+> Zweifel. Wegspeichern müssen wir nur für die kurzen. Das ‚std‘ MCS ist das Standard-MCS
+> bei den langen, deswegen nehmen wir immer das, um zu schauen, ob es Promopreise gibt."
+
+Daraus folgt die Leseregel, die jetzt gilt:
+
+| Feld | MCS | Inhalt |
+|---|---|---|
+| `promotionPrices` / `netPromotionPrices` | **lang** (`channel=web`, Sprache, `store` leer) | der angewendete Preis — **hat Vorrang** |
+| `prices` / `netPrices` | **kurz** | Listenpreis — greift, wo keine Aktion gepflegt ist |
+
+Netto kommt aus `netPromotionPrices` bzw. `netPrices`, also **aus derselben Quelle wie
+Brutto**, nie gerechnet — sonst wäre die Konsistenzregel (§ 6.1) verletzt.
+
+### Nachgemessen, nicht angenommen
+
+Gegen den Affiliate-Export `/affiliateExport/preisschreiber_de/` — die Preise, mit denen
+tatsächlich geworben wird:
+
+| | |
+|---|---|
+| Artikel im Feed | 34.551 |
+| brutto identisch mit `promotionPrices` am langen MCS | **34.551 (100 %)** |
+| Abweichungen | **0** |
+| Artikel in Aktion, die der alte Weg übersah | **3.331** (rund 10 % des Sortiments) |
+
+Der Feed wird daher **nicht** gebraucht; er hat als unabhängige Gegenprobe gedient und
+kann jederzeit wieder dafür benutzt werden.
+
+### Zwei Fallen in der Auflösung
+
+**Die Staffelkarte.** Eine `promotionPrices`-Zelle ist keine Liste, sondern eine Karte
+`{0=[…], 10=[…]}`. Der Schlüssel ist die **Staffelmenge**; nur `0` ist die Grundmenge,
+`10` der Mengenpreis ab zehn Stück. Ungefiltert wäre bei **1.692 Artikeln** ein
+Mengenrabatt als Endkundenpreis in die Beweisgrundlage gewandert. Innerhalb von
+Schlüssel 0 wurde über alle 34.866 DE-Artikel **kein einziger** Fall mit zwei gleichzeitig
+gültigen Einträgen gefunden — die Auflösung ist eindeutig.
+
+**Der Einzelabruf war ebenso blind.** `/admin/pssoverview/prices/shop/get/…` heißt „shop",
+antwortet in 0,13 s und liefert trotzdem 199,00 €. Ein gezielter Nachlauf über diesen Weg
+hätte den falschen Preis geschrieben — und zwar nur für den nachgelaufenen Artikel, also
+besonders schwer zu bemerken. Einzelne Artikel werden deshalb über `os/info` gelesen, mit
+**derselben** Auflösungsregel wie der Sammelweg.
+
+### Was daraus für die Zukunft folgt
+
+**Kurze MCS sind nie richtig** (Auskunft GRUBE) — weder beim Lesen von Aktionen noch als
+Annahme über die Vollständigkeit einer Quelle. Umgekehrt kennt der **PSS nur die kurze
+Form**: An 212 Einträgen des Artikels 3049187041 nachgesehen, kein einziger langer MCS
+darunter. Gelesen wird also lang, geschrieben kurz — `Run::mcsPaar()` führt beide
+nebeneinander, damit die Unterscheidung nicht an einer Aufrufstelle verlorengeht.
+
+**`vatRate` und `priceUnit` brauchen keinen eigenen Abruf mehr.** `vatRate` steht an jeder
+`prices`-Zeile im Sammelabzug; `priceUnit` ist im ganzen Sortiment `STCK` (Auskunft GRUBE:
+„STCK ist fix, das ist keine Variable", nachgesehen an allen 212 PSS-Einträgen). Vorher
+kostete jeder Artikel dafür eine eigene PSS-Anfrage — beim Erstlauf rund 231.000, die
+nichts lieferten, was nicht schon vorlag.
 
 ## Der Schreibweg in den PSS (18.08.2026 ermittelt, TODO(setup) 2 und 6 erledigt)
 
@@ -833,46 +860,84 @@ php bin/demo-seed.php [--loeschen]           # Beispieldaten (nur staging)
 
 ## Betrieb
 
-* **Trockenmodus ist der Auslieferungszustand** (`dry_run: true`). Scharfschalten ist
-  eine bewusste Handlung.
+* **Der Tageslauf wird über eine URL angestoßen**, nicht über einen Shell-Cron: Der
+  ISPConfig-Panel-Cron ruft `trigger.php` auf. Weil ein Lauf rund elf Minuten dauert und
+  PHP-FPM ihn abbräche, sobald der Aufrufer weg ist, startet der Trigger ihn per `setsid`
+  abgelöst und antwortet sofort. `flock -n` verhindert Doppelläufe — ein Cron, der einmal
+  zu oft feuert, richtet keinen Schaden an.
+* **`--write` steht im Trigger, nicht in der `app.yml`.** Der Auslieferungszustand der
+  Konfiguration bleibt der Trockenmodus, damit ein von Hand gestarteter Lauf nichts
+  überträgt. Scharf ist genau ein sichtbarer Weg.
+* **Der Token liegt außerhalb des Docroots** (`<laufzeit>/trigger.token`, 600) und wird
+  mit `hash_equals` geprüft — ein Vergleich, der beim ersten Unterschied abbricht, verrät
+  über die Antwortzeit, wie viele Zeichen stimmten.
 * **Reihenfolge zwingend:** DiVA-Preisimport → iSHOP aktuell → Tracker-Lauf.
 * `write_enabled: false` für **CH**: Die Schweizer Preisbekanntgabeverordnung folgt nicht
   der EU-30-Tage-Regel. Getrackt wird trotzdem, damit Historie vorliegt, wenn Legal
   entscheidet.
 * **Delta-Writes:** `last_written_*` wird nur bei Erfolg gesetzt — dadurch holt der
-  nächste Lauf einen fehlgeschlagenen Write von selbst nach.
+  nächste Lauf einen fehlgeschlagenen Write von selbst nach. Das trägt auch die
+  Blockbildung: Scheitert ein Block mit 500 Einträgen, bleiben alle 500 offen und gehen
+  beim nächsten Lauf erneut hinaus.
 * Statusseite liest den DB-Zugang aus der Laufzeit, nicht aus `$HOME/secrets/`: Der
   FPM-Pool darf nur `web/`, `private/` und `tmp/` lesen (Muster wie zw7/mbc/7he).
 
+### Der Anlauf ist ein Vorlauf (Entscheidung GRUBE, 18.08.2026)
+
+**Der erste Lauf schreibt nichts, und das ist die richtige Antwort.** Das Fenster des
+§ 11 ist `[heute−30, gestern]` — am ersten Beobachtungstag liegt darin kein einziger Tag.
+Es gibt keinen niedrigsten Preis der letzten 30 Tage, weil die 30 Tage nicht beobachtet
+wurden. Der Rechenkern schreibt deshalb keinen Wert, statt einen zu behaupten.
+
+Der naheliegende Ausweg — trotzdem schreiben und über `window_complete = 0` kennzeichnen —
+geht in die **gefährliche** Richtung: War ein Artikel vor drei Wochen billiger und wir
+wissen es nicht, fällt die Referenz zu **hoch** aus, und es würde eine zu große Ersparnis
+beworben. Genau das wird abgemahnt.
+
+Ein **Backfill** wurde geprüft und verworfen: Der Object Storage führt zwar zu jedem
+Preiseintrag ein `startDate`, aber bei den Aktionseinträgen des Testartikels stand dort
+`11.09.2025`, obwohl die Aktion am 18.08.2026 aktiviert wurde. Das Feld bildet den
+Aktionsbeginn **nicht** ab. Ein Backfill darüber behauptete, der Aktionspreis gelte seit
+einem Jahr — und vernichtete damit genau die Ersparnis, die belegt werden soll.
+
+Es läuft daher ab dem 18.08.2026 täglich mit. Werte entstehen von selbst, sobald je
+Artikel Historie vorliegt; ab dem **17.09.2026** ist das Fenster voll und
+`window_complete` steht auf 1. Bis dahin ist das Dashboard bereits benutzbar — es zeigt
+Preisverlauf und Zustand, nur eben noch keine 30-Tage-Referenz.
+
 ## Offen (TODO(setup))
 
-1. ~~iSHOP-Endpunkt und Marktdimension~~ — **erledigt am 18.08.2026**. Der Sammelabzug
-   liefert alle acht Märkte samt Währung im MCS-Schlüssel; die Währungsprüfung aus § 3
-   kann damit gegen die Quelle laufen statt gegen `markets.yml`.
-1b. **Längste geplante Aktionsdauer**, damit `permanent_after_days` darübergesetzt werden
-   kann. Ohne Aktionskennzeichen trägt diese Zahl allein — sie ist jetzt die wichtigste
-   offene Angabe.
-2. ~~PSS-Write~~ — **erledigt am 18.08.2026**, siehe oben. `PATCH` = Upsert, `DELETE` =
-   Leerung, neue priceTypes ohne Anmeldung. Offen bleibt allein die **Freigabe**, wann
-   `dry_run: false` in Produktion gesetzt wird.
-3. Zeitpunkt des täglichen DiVA-Preisimports je Shop (Cron danach).
-3b. **VORRANGIG: eine Preisquelle, die Aktionen kennt** — siehe den Warnabschnitt oben.
-   Ohne sie ist das Werkzeug nicht produktionsreif, so vollständig es sonst ist.
-4. Entscheidung Anlauf: **Vorlauf** (30 Tage vor werblicher Nutzung produktiv) vs.
-   **Backfill** (existiert eine Preishistorie der letzten 30+ Tage?).
-5. `alert_email` und die Shop-Kennungen je Markt für `markets.yml`.
-6. ~~PREV-priceTypes und Leerungs-Semantik~~ — **erledigt**: Neue priceTypes werden ohne
-   Anmeldung angenommen, die Leerung ist ein `DELETE`.
-6b. **Offene Grundsatzfrage (GRUBE, 18.08.2026): Soll `PREV_*` überhaupt jemals leer
-   sein?** Siehe Abschnitt „Vorstufen-Anker" — die Antwort entscheidet, ob der Tracker
-   die Leerung schreibt oder ob das Template über die Anzeige entscheidet.
-7. **`prev_price_max_days` von Legal kalibrieren lassen** (Vorgabe 42 Tage). Ebenso:
-   Ist `permanent_after_days: 60` größer als die längste tatsächlich geplante Aktion?
-8. Verzeichnisschutz für `status/` im ISPConfig-Panel; GitHub-Repo `grubekg/y5x` anlegen.
-9. ~~Object-Storage-Berechtigung auf der Integ~~ — **erledigt am 18.08.2026** (GRUBE hat
-   `seo-index-agent` dort angelegt). Staging liest jetzt vollständig von der Integ.
-   Offen bleibt: **die in Staging vorhandene Preishistorie stammt aus der Produktion und
-   sollte vor dem nächsten Lauf verworfen werden** — siehe Warnung oben.
+Stand 18.08.2026, nach Produktivstellung.
+
+1. **Zeitpunkt des täglichen DiVA-Preisimports je Shop.** Der Cron steht auf 05:30 und ist
+   damit geraten, nicht abgestimmt. Läuft der Import später, liest der Tageslauf den Stand
+   von gestern — für einen Tag ohne Preisänderung folgenlos, für den Tag einer Aktion
+   falsch.
+2. **Längste geplante Aktionsdauer**, damit `permanent_after_days` (derzeit 60) sicher
+   darüberliegt. Ohne Aktionskennzeichen trägt diese Zahl allein die Unterscheidung
+   zwischen „lange Aktion" und „neuer Dauerpreis".
+3. **`prev_price_max_days` von Legal kalibrieren** (Vorgabe 42 Tage).
+4. **Soll `PREV_*` überhaupt jemals leer sein?** Siehe „Vorstufen-Anker" — die Antwort
+   entscheidet, ob der Tracker die Leerung schreibt oder das Template über die Anzeige.
+5. `alert_email` und die Shop-Kennungen (`shop:`) je Markt in `markets.yml`.
+6. **Verzeichnisschutz für `status/`** im ISPConfig-Panel — für beide Umgebungen. Aus der
+   Shell ist das auf nginx nicht möglich; die Anmeldung der Statusseite schützt die Daten,
+   aber der Ordner selbst ist ohne Panel-Schutz öffentlich erreichbar.
+7. **CH-Freigabe.** `write_enabled: false`, weil die Schweizer Preisbekanntgabeverordnung
+   nicht der EU-30-Tage-Logik folgt. Getrackt wird trotzdem, damit Historie vorliegt,
+   sobald Legal entscheidet.
+
+### Erledigt am 18.08.2026
+
+| | |
+|---|---|
+| iSHOP-Endpunkt und Marktdimension | Sammelabzug liefert alle acht Märkte samt Währung |
+| **Preisquelle, die Aktionen kennt** | `promotionPrices` am langen MCS — der Grundsatzfehler ist behoben |
+| PSS-Schreibweg | `PATCH` = Upsert, `DELETE` = Leerung, 500 Einträge je Aufruf |
+| Object-Storage-Rechte auf Integ | GRUBE hat `seo-index-agent` angelegt |
+| Historie aus gemischten Quellen | verworfen und vollständig von Integ neu eingelesen |
+| Anlaufentscheidung | **Vorlauf** (Entscheidung GRUBE, 18.08.2026) |
+| Produktivumgebung, Cron, GitHub | steht |
 
 ## Was sich absichtlich NICHT bedienen lässt
 
