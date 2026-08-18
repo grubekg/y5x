@@ -5,7 +5,7 @@ declare(strict_types=1);
 /**
  * Benutzer der Statusseite verwalten.
  *
- *     php bin/user.php add  <mail> <passwort>
+ *     php bin/user.php add  <mail> <passwort> [admin|user]
  *     php bin/user.php pass <mail> <passwort>
  *     php bin/user.php list
  *     php bin/user.php del  <mail>
@@ -25,15 +25,16 @@ switch ($befehl) {
     case 'add':
     case 'pass':
         $pw = (string) ($argv[3] ?? '');
+        $rolle = \in_array($argv[4] ?? '', ['admin', 'user'], true) ? $argv[4] : 'user';
         if ($mail === '' || $pw === '') {
             \fwrite(\STDERR, "Aufruf: php bin/user.php $befehl <mail> <passwort>\n");
             exit(1);
         }
         $hash = \password_hash($pw, \PASSWORD_DEFAULT);
         $db->execute(
-            'INSERT INTO {p}users (username, password_hash, created_at) VALUES (?,?,NOW())
-             ON DUPLICATE KEY UPDATE password_hash = VALUES(password_hash)', [$mail, $hash]);
-        echo "Benutzer $mail gespeichert ({$db->env}, Tabelle {$db->table('users')}).\n";
+            'INSERT INTO {p}users (username, password_hash, role, created_at) VALUES (?,?,?,NOW())
+             ON DUPLICATE KEY UPDATE password_hash = VALUES(password_hash)', [$mail, $hash, $rolle]);
+        echo "Benutzer $mail gespeichert (Rolle $rolle, {$db->env}, Tabelle {$db->table('users')}).\n";
         break;
 
     case 'del':
@@ -42,8 +43,8 @@ switch ($befehl) {
         break;
 
     default:
-        foreach ($db->query('SELECT username, created_at, last_login FROM {p}users ORDER BY username') as $u) {
-            \printf("  %-36s angelegt %s  zuletzt %s\n", $u['username'],
+        foreach ($db->query('SELECT username, role, created_at, last_login FROM {p}users ORDER BY username') as $u) {
+            \printf("  %-36s %-6s angelegt %s  zuletzt %s\n", $u['username'], $u['role'],
                 $u['created_at'] ?? '—', $u['last_login'] ?? 'nie');
         }
 }

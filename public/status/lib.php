@@ -79,6 +79,29 @@ function current_user(): string
 }
 
 /**
+ * Rolle des angemeldeten Benutzers — bei jedem Aufruf frisch aus der Datenbank.
+ *
+ * Bewusst **nicht** in der Sitzung gehalten: Wird jemandem die Adminrolle entzogen,
+ * soll das sofort greifen und nicht erst beim nächsten Anmelden. Bei einem Werkzeug,
+ * dessen Protokoll etwas belegen soll, ist eine veraltete Berechtigung im Sitzungsspeicher
+ * die falsche Art von Bequemlichkeit.
+ */
+function current_role(): string
+{
+    static $rolle = null;
+    if ($rolle === null) {
+        $z = db()->one('SELECT role FROM {p}users WHERE username = ?', [current_user()]);
+        $rolle = (string) ($z['role'] ?? 'user');
+    }
+    return $rolle;
+}
+
+function ist_admin(): bool
+{
+    return current_role() === 'admin';
+}
+
+/**
  * Anmeldung.
  *
  * Drei Dinge, die bei einem Werkzeug mit Beweisfunktion nicht verhandelbar sind:

@@ -98,6 +98,10 @@ CREATE TABLE IF NOT EXISTS {{P}}users (
   id            INT AUTO_INCREMENT PRIMARY KEY,
   username      VARCHAR(64) NOT NULL UNIQUE,
   password_hash VARCHAR(255) NOT NULL,
+  -- 'admin' darf Zugaenge verwalten, 'user' nur den eigenen. Die Zugangsvergabe gehoert
+  -- bei einem Werkzeug mit Beweisfunktion in wenige Haende — und das login_log ist nur
+  -- aussagekraeftig, wenn sich niemand still einen zweiten Zugang anlegen kann.
+  role          ENUM('admin','user') NOT NULL DEFAULT 'user',
   created_at    DATETIME NULL,
   last_login    DATETIME NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -124,4 +128,21 @@ CREATE TABLE IF NOT EXISTS {{P}}article_meta (
   url_checked_at DATETIME      NULL,
   fetched_at     DATETIME      NOT NULL,
   PRIMARY KEY (sku, market)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Einladungen statt Startpasswoerter: Der Eingeladene vergibt sein Passwort selbst,
+-- niemand sonst hat es je gesehen. Der Schluessel liegt nur als Hash vor.
+CREATE TABLE IF NOT EXISTS {{P}}invitations (
+  id          INT AUTO_INCREMENT PRIMARY KEY,
+  email       VARCHAR(190) NOT NULL,
+  role        ENUM('admin','user') NOT NULL DEFAULT 'user',
+  token_hash  VARCHAR(255) NOT NULL,
+  created_by  VARCHAR(190) NOT NULL,
+  created_at  DATETIME     NOT NULL,
+  expires_at  DATETIME     NOT NULL,
+  used_at     DATETIME     NULL,
+  revoked_at  DATETIME     NULL,
+  mail_sent   TINYINT(1)   NOT NULL DEFAULT 0,
+  KEY idx_offen (email, used_at, revoked_at),
+  KEY idx_zeit (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

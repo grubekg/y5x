@@ -426,6 +426,44 @@ Dateigröße.
 > Referenz tatsächlich stammt. In einem Beweisdokument war das keine Feinheit, sondern
 > eine Falschangabe.
 
+### Zugänge: Rollen und Einladungen (18.08.2026)
+
+Zwei Rollen. **`user`** sieht alles und verwaltet nur den eigenen Zugang; **`admin`**
+darf zusätzlich Zugänge vergeben. Geprüft wird serverseitig, nicht bloß in der Anzeige —
+ein Formular, das man nicht sieht, kann man trotzdem abschicken. Die Rolle wird bei jedem
+Aufruf frisch gelesen, **nicht** in der Sitzung gehalten: Ein Rechteentzug soll sofort
+greifen, nicht erst beim nächsten Anmelden.
+
+Beides liegt im **Kontobereich** — dieselbe Seite, auf der jeder sein eigenes Passwort
+ändert. Ein eigener Menüpunkt fehlt bewusst; die E-Mail-Adresse im Kopf führt hin.
+
+**Keine Startpasswörter, sondern Einladungen.** Wer ein Startpasswort vergibt, kennt es —
+und dann belegt das `login_log` nicht mehr zuverlässig, wer gearbeitet hat. Bei einem
+Werkzeug mit Beweisfunktion ist das der Punkt, an dem die Nachweiskette leise reißt. Also:
+
+* Ein Admin lädt eine Adresse ein und wählt die Rolle.
+* Der Schlüssel entsteht aus `random_bytes(32)` und liegt **nur als Hash** in der
+  Datenbank — er ist ein Passwort-Äquivalent. Im Klartext existiert er genau einmal: im
+  Link, der herausgeht. Die Oberfläche zeigt ihn deshalb nur unmittelbar nach dem Anlegen.
+* Der Link gilt **7 Tage** und lässt sich **einmal** einlösen; der Eingeladene vergibt
+  sein Passwort selbst (mindestens 12 Zeichen).
+* **Der Mailversand darf nicht die Bedingung sein.** Klappt er nicht, ist die Einladung
+  trotzdem gültig und der Link steht dem Admin auf der Seite. Ein Werkzeug, das einen
+  Zugang von einer Zustellung abhängig macht, blockiert sich bei der ersten
+  Spamfilter-Laune selbst. Die Liste offener Einladungen zeigt an, ob die Mail rausging.
+* Ungültige Links melden **generisch** „abgelaufen, bereits verwendet oder
+  zurückgezogen" — welcher Grund zutrifft, wird nicht verraten.
+
+**Die letzte Administration lässt sich nicht herabstufen** und niemand kann den eigenen
+Zugang entfernen — sonst sperrt sich die Installation aus und niemand vergibt mehr Zugänge.
+
+`einladung.php` ist die einzige Seite ohne Anmeldung. Verifiziert: falscher Schlüssel,
+fremde ID, zweite Verwendung und abgelaufene Einladung werden alle abgewiesen, und der
+Klartextschlüssel steht nicht in der Datenbank.
+
+CLI-Weg unverändert vorhanden: `php bin/user.php add <mail> <passwort> [admin|user] [admin|user]` —
+für den allerersten Zugang, wenn es noch niemanden gibt, der einladen könnte.
+
 ### Anmeldung
 
 Generische Fehlermeldung (die Maske darf kein Kontoverzeichnis werden), Versuchssperre
@@ -493,7 +531,7 @@ Bedienung betrifft: Passwort und Zugänge.
 
 ## Zugang zur Statusseite
 
-Benutzer werden mit `php bin/user.php add <mail> <passwort>` angelegt (nur der Hash wird
+Benutzer werden mit `php bin/user.php add <mail> <passwort> [admin|user]` angelegt (nur der Hash wird
 gespeichert). Angelegt in **staging**: `alexander.zindler@grube.de`.
 
 Das ersetzt **keinen** Verzeichnisschutz: `.htaccess` wirkt auf nginx nicht, und die
