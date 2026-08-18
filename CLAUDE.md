@@ -195,6 +195,43 @@ Vorhandene priceTypes je SKU: `PRICE_NET/GROSS`, `RRP_NET/GROSS`, `UNREBATED_NET
 Offene Datenauffälligkeit: Zwei Zeilen tragen ein doppelt maskiertes
 `provider`-Feld (`{\"excludePromotions\": \"false\"}`) — beim Auswerten robust behandeln.
 
+## Der Volllauf: 5,6 Minuten für acht Märkte (gemessen 18.08.2026)
+
+Vollständiger Lauf über alle aktiven Märkte und den gesamten Bestand, im Normalzustand
+(alle Preise unverändert — die realistische tägliche Form):
+
+| | |
+|---|---|
+| **Gesamtdauer** | **337 s = 5,6 min** |
+| davon Sammelabzug (einmalig) | ~140 s — laden und zerlegen von 2 × 191 MB |
+| davon die acht Märkte | 199 s (DE 30 · AT 31 · FR 30 · PL 21 · SK 18 · SE 12 · DK 27 · CH 30) |
+| gelesen | 285.184 Artikel × Markt |
+| getrackt | 231.510 (der Rest ist im jeweiligen Markt nicht geführt) |
+| Anomalien verworfen | 90 |
+| Fehler | **0** |
+| Speicherbedarf | 3 GB erlaubt, ~180 MB benutzt |
+| `price_events` | 48,2 MB für 231.551 Intervalle |
+
+**Der Sammelabzug ist der Fixkostenanteil** und wächst nicht mit der Artikelzahl. Die
+Märkte selbst kosten rund 0,9 ms je Artikel — das ist Datenbankarbeit, kein Netz.
+
+Für den Nachtlauf heißt das: Ein Zeitfenster von **15 Minuten** ist auch mit Reserve
+großzügig bemessen. Schreibvorgänge kommen obendrauf, aber nur für tatsächlich geänderte
+Werte (Delta-Write) — im eingeschwungenen Betrieb sind das wenige je Tag.
+
+### Anomalien im echten Bestand
+
+Die 90 verworfenen Datensätze sind keine Rundungsfehler:
+
+| Art | Anzahl |
+|---|---|
+| Bruttopreis nicht positiv (0,00 €) | 41 |
+| Nettopreis nicht positiv bei positivem Brutto | 5 |
+| **netto größer als brutto** | 7 |
+
+Der dritte Fall ist der interessanteste — in Polen etwa `netto 5.405,00 / brutto 4.800,00`.
+Jeder verworfene Datensatz steht mit Artikelnummer und Begründung im `run_log`.
+
 ## Der Schreibweg in den PSS (18.08.2026 ermittelt, TODO(setup) 2 und 6 erledigt)
 
 **Es gibt eine Integrationsumgebung, und dort gehören solche Versuche hin:**
