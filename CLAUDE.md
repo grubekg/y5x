@@ -234,6 +234,56 @@ Der Schlüssel eines Eintrags ist `sku` + `priceType` + `customer` + `customerGr
 Artikels übernommen statt erfunden — der Steuersatz gehört zum Artikel, nicht zu unserem
 Referenzwert.
 
+## Umgebungstrennung — unvollständig, und das ist ein offener Punkt
+
+| | staging | prod |
+|---|---|---|
+| PSS (**schreibend**) | `integ.grube.de` ✅ | `admin.grube.app` |
+| Shop-Link im Nachweis | `integ.grube.de` ✅ | `www.grube.de` |
+| iSHOP (**lesend**) | ⚠️ `admin.grube.app` — **Produktion** | `admin.grube.app` |
+
+Die ersten beiden Zeilen sind sauber getrennt. Die dritte **nicht**, und das ist eine
+Inkonsistenz, keine Bequemlichkeit: Staging rechnet aus Produktionspreisen und schreibt
+das Ergebnis auf die Integ.
+
+Der Grund ist kein Versäumnis, sondern eine fehlende Berechtigung: Der
+Object-Storage-Zugang (`/admin/os/overview`) antwortet auf der Integ mit **401** — die
+Kennung `seo-index-agent` gilt dort nicht. Der Preisendpunkt
+(`/admin/pssoverview/prices/shop/get/…`) funktioniert dagegen. **Solange die
+Object-Storage-Berechtigung auf der Integ fehlt, kann Staging seine Artikelliste nicht
+von dort holen.**
+
+Fürs Testen ist das tragbar (die Preise sind echt, nur die Herkunft ist die falsche
+Umgebung), für den Dauerbetrieb nicht. → TODO(setup) 9.
+
+**Der Shop-Link folgt der Umgebung** (`url` / `url_staging` in `markets.yml`). Fehlt die
+Staging-Adresse, wird **nicht** auf die Produktivadresse ausgewichen — lieber kein Link
+als ein falscher. Ein Nachweis, der auf einer Staging-Seite eine Produktiv-URL nennt,
+behauptet, unter dieser Adresse sei geworben worden, und im Abmahnfall ist genau die URL
+der Streitgegenstand.
+
+## Der erste Schreiblauf (18.08.2026, 20 Beispiele, Integ)
+
+42 Einträge übertragen, **0 Fehler**, und aus dem PSS zurückgelesen stimmen alle 20
+Artikel auf den Cent mit `price_state` überein. Der Delta-Write greift: Ein zweiter Lauf
+schreibt nichts mehr.
+
+**Der wichtigste Befund war nicht der Erfolg, sondern eine Zahl in der Statistik:**
+Von 20 Beispielen ging genau **eines** in den Zustand `promo` — dasjenige, dessen Preis
+**heute** fiel.
+
+Das ist richtig und trotzdem folgenreich. Der Zustandsautomat erkennt eine Aktion daran,
+dass der Preis gegenüber gestern fällt. Eine Aktion, die **vor** dem ersten Lauf begann,
+sieht er nie: Für ihn steht der Preis seit jeher auf dem Aktionswert. Das rollierende
+Fenster liefert dann als Referenz den Aktionspreis selbst — die ausgewiesene Ersparnis
+ist null.
+
+Rechtlich ist das die **sichere** Richtung (es wird zu wenig ausgewiesen, nie zu viel).
+Betriebswirtschaftlich heißt es: **Am Tag des Scharfschaltens zeigt jede bereits laufende
+Aktion keine Ersparnis**, bis sie endet und eine neue beginnt. Genau darum geht es bei
+TODO(setup) 4 (Vorlauf vs. Backfill) — hier ist der Beleg dafür, warum die Entscheidung
+nicht kosmetisch ist.
+
 ## Woher die Preise kommen — gefunden am 18.08.2026
 
 **Die Routenliste macht das Raten überflüssig.** `GET /admin/` liefert alle 253
@@ -599,6 +649,9 @@ php bin/demo-seed.php [--loeschen]           # Beispieldaten (nur staging)
 7. **`prev_price_max_days` von Legal kalibrieren lassen** (Vorgabe 42 Tage). Ebenso:
    Ist `permanent_after_days: 60` größer als die längste tatsächlich geplante Aktion?
 8. Verzeichnisschutz für `status/` im ISPConfig-Panel; GitHub-Repo `grubekg/y5x` anlegen.
+9. **Object-Storage-Berechtigung auf der Integ** (`/admin/os/overview` antwortet dort mit
+   401). Ohne sie liest Staging seine Artikelliste weiter aus der Produktion — siehe
+   „Umgebungstrennung".
 
 ## Was sich absichtlich NICHT bedienen lässt
 

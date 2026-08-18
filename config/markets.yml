@@ -2,14 +2,19 @@
 # Antwort des Shops geprueft; weicht sie ab, bricht der Markt-Lauf ab (Alert). Ein
 # stillschweigend in der falschen Waehrung gefuehrter Referenzpreis waere eine falsche
 # Werbeaussage, kein Schoenheitsfehler.
-# `url` = oeffentliche Shop-Adresse. Der Link auf einen Artikel entsteht daraus als
+# `url` = Adresse des PRODUKTIVSHOPS, `url_staging` die der Integrationsumgebung.
+# Beide zu fuehren ist keine Umstaendlichkeit: Ein Nachweis, der auf einer Staging-Seite
+# eine Produktiv-URL nennt, behauptet, dort sei geworben worden — und im Abmahnfall ist
+# genau die URL der Streitgegenstand. Die Umgebung entscheidet, welche gilt.
+#
+# Der Link auf einen Artikel entsteht daraus als
 # <url>/search/?q=<Artikelnummer> — der Shop leitet von dort direkt auf die Produktseite
 # mit vorgewaehltem Artikel um (geprueft 18.08.2026:
 # /search/?q=1000172720 -> /p/erdbohrgeraet-vertex-g250/100017/?articleNo=1000172720#it).
 # Das ist stabiler als ein selbst zusammengesetzter Produktpfad, der Slug und Produkt-ID
 # braeuchte, die wir gar nicht fuehren.
 markets:
-  DE: { currency: EUR, shop: TODO, url: "https://www.grube.de", write_enabled: true,  active: true }
+  DE: { currency: EUR, shop: TODO, url: "https://www.grube.de", url_staging: "https://integ.grube.de", write_enabled: true,  active: true }
   AT: { currency: EUR, shop: TODO, url: TODO, write_enabled: true,  active: true }
   FR: { currency: EUR, shop: TODO, url: TODO, write_enabled: true,  active: true }
   PL: { currency: PLN, shop: TODO, url: TODO, write_enabled: true,  active: true }

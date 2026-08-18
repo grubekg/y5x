@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Grube\Price30\Cli;
 
 use Grube\Price30\Adapters\IshopPriceAdapter;
+use Grube\Price30\Adapters\PssPriceAdapter;
 use Grube\Price30\Calc\EventJournal;
 use Grube\Price30\Calc\PriceEvent;
 use Grube\Price30\Calc\PriceWindow;
@@ -31,10 +32,12 @@ final class Run
         private readonly IshopPriceAdapter $shop,
         private readonly array $app,
         private readonly array $markets,
+        private readonly ?PssPriceAdapter $pss = null,
     ) {
     }
 
-    public function fuerMarkt(string $markt, int $limit, bool $ausfuehrlich = false): array
+    public function fuerMarkt(string $markt, int $limit, bool $ausfuehrlich = false,
+                             bool $abruf = true): array
     {
         $heute = new \DateTimeImmutable('today');
         $m = $this->markets[$markt] ?? [];
@@ -45,15 +48,37 @@ final class Run
         $anomalien = [];
         $zaehler = ['gelesen' => 0, 'ohne_preis' => 0, 'anomalien' => 0,
                     'neu' => 0, 'geaendert' => 0, 'unveraendert' => 0,
-                    'in_aktion' => 0, 'fenster_voll' => 0, 'fehler' => 0];
+                    'in_aktion' => 0, 'fenster_voll' => 0, 'fehler' => 0,
+                    'writes' => 0, 'write_fehler' => 0];
 
-        $skus = $this->shop->skus($limit);
-        $this->melden(\sprintf('%d Artikelnummern aus dem Object Storage', \count($skus)), $ausfuehrlich);
+        // Drei Bedingungen muessen ZUSAMMEN erfuellt sein, damit geschrieben wird. Jede
+        // einzelne davon hat schon einmal jemanden davor bewahrt, in ein Produktivsystem
+        // zu schreiben, das er nicht meinte.
+        $trocken = (bool) ($this->app['dry_run'] ?? true);
+        $marktFrei = (bool) ($m['write_enabled'] ?? false);
+        $schreiben = $this->pss !== null && !$trocken && $marktFrei;
+        $this->melden(\sprintf('Schreiben: %s', $schreiben ? 'AKTIV' : \sprintf(
+            'aus (%s)', $this->pss === null ? 'kein Adapter'
+                : ($trocken ? 'Trockenmodus' : 'write_enabled=false fuer ' . $markt))),
+            $ausfuehrlich);
+
+        if ($abruf) {
+            $skus = $this->shop->skus($limit);
+            $this->melden(\sprintf('%d Artikelnummern aus dem Object Storage', \count($skus)), $ausfuehrlich);
+        } else {
+            // Ohne Abruf: nur rechnen und schreiben, auf dem vorhandenen Bestand. Nuetzlich
+            // fuer eine Wiederholung nach einem Schreibfehler, ohne den Shop zu belasten.
+            $skus = \array_column($this->db->query(
+                'SELECT sku FROM {p}price_state WHERE market = ? ORDER BY sku'
+                . ($limit > 0 ? ' LIMIT ' . (int) $limit : ''), [$markt]), 'sku');
+            $this->melden(\sprintf('%d Artikel aus dem Bestand (kein Shop-Abruf)', \count($skus)), $ausfuehrlich);
+        }
 
         // Bezeichnungen einmal je Lauf in einer Anfrage (2,9 s fuer 29.316) statt bei
         // jeder Anzeige einzeln. Sie sind Anzeigehilfe, keine Beweisgrundlage — schlaegt
         // der Abruf fehl, laeuft der Lauf ohne sie weiter.
         try {
+            if (!$abruf) { throw new \RuntimeException('kein Abruf'); }
             $namen = $this->shop->namen();
             $gesetzt = 0;
             foreach (\array_chunk($skus, 500) as $block) {
@@ -74,7 +99,7 @@ final class Run
             }
             $this->melden(\sprintf('%d Bezeichnungen übernommen', $gesetzt), $ausfuehrlich);
         } catch (\Throwable $e) {
-            $this->melden('Bezeichnungen nicht abrufbar: ' . $e->getMessage(), $ausfuehrlich);
+            if ($abruf) { $this->melden('Bezeichnungen nicht abrufbar: ' . $e->getMessage(), $ausfuehrlich); }
         }
 
         $journal = new EventJournal();
@@ -88,7 +113,7 @@ final class Run
 
         foreach ($skus as $i => $sku) {
             try {
-                $p = $this->shop->preis($sku);
+                $p = $abruf ? $this->shop->preis($sku) : ['net' => null, 'gross' => null];
             } catch (\Throwable $e) {
                 // Ein Lauf, der nur "1000 Fehler" meldet, ist wertlos. Die Meldungen
                 // werden nach Art gezaehlt und landen in der Notiz des run_log.
@@ -97,7 +122,7 @@ final class Run
                 $fehlerarten[$art] = ($fehlerarten[$art] ?? 0) + 1;
                 continue;
             }
-            $zaehler['gelesen']++;
+            if ($abruf) { $zaehler['gelesen']++; }
 
             $net = $p['net'] ?? null;
             $gross = $p['gross'] ?? null;
@@ -113,22 +138,31 @@ final class Run
                 $anomalien[] = \sprintf('%s (%s: netto %s / brutto %s)', $sku, $grund, $net, $gross);
                 $net = $gross = null;
             }
-            if ($net === null || $gross === null) {
+            if ($abruf && ($net === null || $gross === null)) {
                 $zaehler['ohne_preis']++;
                 continue;
             }
 
-            // Objekte, nicht rohe Zeilen: Das Journal entscheidet ueber Geldbetraege,
-            // und die duerfen nur durch `Money` gehen.
-            $plan = $journal->plan($this->zuEvents($this->events($sku, $markt)),
-                $net, $gross, $waehrung, $heute);
-            $this->planAusfuehren($sku, $markt, $plan, $heute);
-            $zaehler[$plan['action']] = ($zaehler[$plan['action']] ?? 0) + 1;
+            if ($abruf) {
+                // Objekte, nicht rohe Zeilen: Das Journal entscheidet ueber Geldbetraege,
+                // und die duerfen nur durch `Money` gehen.
+                $plan = $journal->plan($this->zuEvents($this->events($sku, $markt)),
+                    $net, $gross, $waehrung, $heute);
+                $this->planAusfuehren($sku, $markt, $plan, $heute);
+                $zaehler[$plan['action']] = ($zaehler[$plan['action']] ?? 0) + 1;
+            }
 
             $ref = $rechner->calculate(
                 $this->zuEvents($this->events($sku, $markt)),   // frisch, inkl. heute
                 $this->zustand($sku, $markt), $heute, $waehrung);
+            $vorher = $this->zustand2($sku, $markt);
             $this->zustandSchreiben($sku, $markt, $ref);
+
+            if ($schreiben) {
+                [$ok, $fehl] = $this->pssSchreiben($sku, $markt, $waehrung, $ref, $vorher);
+                $zaehler['writes'] += $ok;
+                $zaehler['write_fehler'] += $fehl;
+            }
 
             if ($ref->state->isPromo()) { $zaehler['in_aktion']++; }
             if ($ref->windowComplete)   { $zaehler['fenster_voll']++; }
@@ -241,6 +275,142 @@ final class Run
              $s->lastReductionAt?->format('Y-m-d'), $s->prePromoGross, $s->prePromoNet,
              $s->frozenRefNet, $s->frozenRefGross, $ref->windowComplete ? 1 : 0,
              \mb_substr($s->lastTransition, 0, 160)]);
+    }
+
+    /** Rohzeile aus `price_state` — für den Vergleich vor dem Überschreiben. */
+    private function zustand2(string $sku, string $markt): array
+    {
+        return $this->db->one('SELECT * FROM {p}price_state WHERE sku = ? AND market = ?',
+            [$sku, $markt]) ?? [];
+    }
+
+    /**
+     * Die vier Werte in den PSS bringen — nur wenn sich etwas geändert hat.
+     *
+     * **Delta-Write:** Verglichen wird gegen `last_written_*`, und das steht nur nach
+     * einem ERFOLGREICHEN Schreibvorgang. Damit holt der nächste Lauf einen
+     * fehlgeschlagenen von selbst nach; ein eigener Wiederholungsmechanismus wäre
+     * doppelte Buchführung.
+     *
+     * **Paarweise:** `30_GROSS` und `30_NET` gehen in EINEM Aufruf hinaus. Die
+     * Konsistenzregel (§ 6.1) sagt, dass beide aus demselben Ereignis stammen — dann
+     * dürfen sie auch nicht einzeln im PSS landen. Dasselbe gilt für `PREV_*`.
+     *
+     * **`null` heißt löschen**, nicht „unverändert lassen": Ein abgelaufener
+     * Vorstufen-Anker muss aus dem Frontend verschwinden.
+     *
+     * @return array{0:int, 1:int} [erfolgreiche Einträge, fehlgeschlagene Einträge]
+     */
+    private function pssSchreiben(string $sku, string $markt, string $waehrung,
+                                  $ref, array $vorher): array
+    {
+        $mcs = $this->mcs($markt, $waehrung);
+        $extra = $this->steuerAngaben($sku, $mcs);
+        $ok = 0;
+        $fehl = 0;
+
+        $paare = [
+            [['30_GROSS', $ref->gross, 'last_written_30_gross'],
+             ['30_NET',   $ref->net,   'last_written_30_net']],
+            [['PREV_GROSS', $ref->prevGross, 'last_written_prev_gross'],
+             ['PREV_NET',   $ref->prevNet,   'last_written_prev_net']],
+        ];
+
+        foreach ($paare as $felder) {
+            $zuSchreiben = [];
+            $zuLoeschen = [];
+            $protokoll = [];
+            foreach ($felder as [$typ, $neu, $spalte]) {
+                $alt = $vorher[$spalte] ?? null;
+                $gleich = ($neu === null && $alt === null)
+                    || ($neu !== null && $alt !== null && Money::equals((string) $neu, (string) $alt));
+                if ($gleich) {
+                    continue;                       // Delta-Write: nichts zu tun
+                }
+                if ($neu !== null) {
+                    $zuSchreiben[] = PssPriceAdapter::eintrag($sku, $typ, (string) $neu, $mcs,
+                        $extra['vatRate'], $extra['priceUnit']);
+                } else {
+                    $zuLoeschen[] = PssPriceAdapter::schluessel($sku, $typ, $mcs);
+                }
+                $protokoll[] = [$typ, $alt, $neu, $spalte];
+            }
+            if ($protokoll === []) {
+                continue;
+            }
+
+            $ergebnis = $zuSchreiben !== []
+                ? $this->pss->schreiben($zuSchreiben)
+                : $this->pss->loeschen($zuLoeschen);
+            // Gemischter Fall (einer setzen, einer löschen): dann noch der zweite Aufruf.
+            if ($zuSchreiben !== [] && $zuLoeschen !== [] && $ergebnis['ok']) {
+                $ergebnis = $this->pss->loeschen($zuLoeschen);
+            }
+
+            foreach ($protokoll as [$typ, $alt, $neu, $spalte]) {
+                $this->db->execute(
+                    'INSERT INTO {p}pss_write_log (sku, market, price_type, old_value, new_value,
+                        currency, written_at, http_status, success, attempt, response_excerpt)
+                     VALUES (?,?,?,?,?,?,NOW(),?,?,?,?)',
+                    [$sku, $markt, $typ, $alt, $neu ?? 0, $waehrung,
+                     $ergebnis['status'], $ergebnis['ok'] ? 1 : 0, $ergebnis['versuche'],
+                     ($neu === null ? 'geleert (DELETE) ' : '') . \mb_substr($ergebnis['antwort'], 0, 200)]);
+                if ($ergebnis['ok']) {
+                    $this->db->execute(
+                        "UPDATE {p}price_state SET $spalte = ?, last_written_at = NOW()
+                         WHERE sku = ? AND market = ?", [$neu, $sku, $markt]);
+                    $ok++;
+                } else {
+                    $fehl++;
+                }
+            }
+        }
+        return [$ok, $fehl];
+    }
+
+    /**
+     * Der MCS-Schlüssel des Marktes — `[brand=grube country=de currency=EUR]`.
+     *
+     * Er entscheidet, in welchem Shop der Eintrag gilt. Ein falscher MCS schriebe den
+     * Wert in den falschen Markt, ohne dass irgendetwas nach Fehler aussähe.
+     */
+    private function mcs(string $markt, string $waehrung): string
+    {
+        $m = $this->markets[$markt] ?? [];
+        return \sprintf('[brand=%s country=%s currency=%s]',
+            (string) ($m['shop_brand'] ?? 'grube'), \strtolower($markt), $waehrung);
+    }
+
+    /**
+     * `vatRate` und `priceUnit` aus einem vorhandenen Eintrag desselben Artikels.
+     *
+     * Bewusst übernommen statt erfunden: Der Steuersatz gehört zum Artikel, nicht zu
+     * unserem Referenzwert. Gibt es noch keinen Eintrag, bleiben beide leer — dann setzt
+     * der PSS seine Vorgaben.
+     *
+     * @return array{vatRate: ?float, priceUnit: ?string}
+     */
+    private function steuerAngaben(string $sku, string $mcs): array
+    {
+        static $zwischenspeicher = [];
+        $schluessel = $sku . '|' . $mcs;
+        if (isset($zwischenspeicher[$schluessel])) {
+            return $zwischenspeicher[$schluessel];
+        }
+        $out = ['vatRate' => null, 'priceUnit' => null];
+        try {
+            foreach ($this->pss?->bestand($sku) ?? [] as $x) {
+                if (($x['mcs'] ?? '') === $mcs
+                    && \in_array($x['priceType'] ?? '', ['PRICE_GROSS', 'PRICE_NET'], true)) {
+                    $out = ['vatRate' => isset($x['vatRate']) ? (float) $x['vatRate'] : null,
+                            'priceUnit' => $x['priceUnit'] ?? null];
+                    break;
+                }
+            }
+        } catch (\Throwable) {
+            // Kein Grund, den Lauf anzuhalten — der PSS setzt dann seine Vorgaben.
+        }
+        return $zwischenspeicher[$schluessel] = $out;
     }
 
     private function laufBeginnen(string $markt, \DateTimeImmutable $heute): int

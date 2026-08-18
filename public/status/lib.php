@@ -311,6 +311,24 @@ function artikelname(string $sku, string $markt): ?string
 }
 
 /**
+ * Die Shop-Adresse des Marktes — je nach Umgebung.
+ *
+ * In `staging` gilt `url_staging` (die Integrationsumgebung), in `prod` gilt `url`.
+ * Der Unterschied ist keine Formalie: Ein Nachweis, der auf einer Staging-Seite eine
+ * Produktiv-URL nennt, behauptet, unter dieser Adresse sei geworben worden — und im
+ * Abmahnfall ist genau die URL der Streitgegenstand.
+ */
+function markt_shopadresse(string $markt): string
+{
+    $m = maerkte()[$markt] ?? [];
+    $feld = y5x_env() === 'prod' ? 'url' : 'url_staging';
+    $wert = (string) ($m[$feld] ?? '');
+    // Fehlt die Staging-Adresse, wird NICHT auf die Produktivadresse ausgewichen —
+    // lieber kein Link als ein falscher.
+    return $wert;
+}
+
+/**
  * Die **kanonische** Produkt-URL des Artikels — aufgelöst, nicht konstruiert.
  *
  * **Warum nicht der Suchlink:** Eine Abmahnung nennt eine Adresse. `…/search/?q=<sku>`
@@ -340,7 +358,7 @@ function produkt_url(string $sku, string $markt): array
                 'hinweis' => $z['url'] === null ? 'keine Produktseite im Shop' : ''];
     }
 
-    $basis = (string) (maerkte()[$markt]['url'] ?? '');
+    $basis = markt_shopadresse($markt);
     if ($basis === '' || $basis === 'TODO') {
         return ['url' => null, 'geprueft' => null,
                 'hinweis' => 'Shop-Adresse für ' . $markt . ' ist in markets.yml nicht gesetzt'];

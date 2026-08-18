@@ -86,6 +86,13 @@ final class PssPriceAdapter
         return $this->senden('DELETE', $schluessel);
     }
 
+    /** Vorhandene Einträge eines Artikels — für `vatRate` und `priceUnit`. */
+    public function bestand(string $sku): array
+    {
+        $d = $this->http->json('', ['skus' => $sku]);
+        return \is_array($d) ? $d : [];
+    }
+
     /**
      * Mit Wiederholung und wachsender Wartezeit.
      *
