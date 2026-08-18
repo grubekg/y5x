@@ -261,32 +261,82 @@ nur über den Tabellennamen. `Support\Db` kennt deshalb keinen Weg zu einer Tabe
 Präfix — `query()` weist einen nackten Namen zurück. Ein Staging-Lauf, der in die
 Produktionstabellen schriebe, verfälschte die Beweisgrundlage.
 
-## Das Dashboard (grube.tools/staging/y5x/status/)
+## Das Dashboard — Gestaltungssystem „Prüfprotokoll"
 
-Kein Betriebsfenster, sondern ein **Verteidigungswerkzeug**. Zwei Seiten:
+Kein SaaS-Look, sondern dokumentarische Ruhe: Papierton, Haarlinien, gesperrte
+Versal-Sektionslabels wie auf Prüfformularen, Monospace mit Tabellenziffern für alles
+Faktische, damit Beträge in Spalten stehen wie gedruckt. Markenfläche in Tannengrün —
+GRUBE ist Forst. Ohne Framework, Webfonts, CDN oder Build-Schritt; das SVG entsteht
+serverseitig aus `price_events`. Vorlagen und Begründung: `docs/design/`.
 
-**`index.php` — Lage je Markt.** Die erste Kachel ist bewusst nicht die größte Zahl,
-sondern die gefährlichste: *Artikel, die gerade eine Ermäßigung ausweisen, deren
-30-Tage-Historie aber unvollständig ist.* Dort beruht eine laufende Werbeaussage auf
-schwacher Grundlage — das will man vor einer Abmahnung wissen, nicht danach. Dazu je
-Markt: getrackte Artikel, Anteil in Aktion, Schreibfreigabe (CH steht auf „aus"),
-letzter Lauf mit **Lücken-Warnung ab 26 h**, Writes/Fehler/Anomalien der letzten 7 Tage.
+Zwei Regeln gelten überall:
 
-**`artikel.php` — der Nachweis.** Artikel + Markt + **Stichtag** ergeben ein druckbares
-Dokument (Anlage zum Schriftsatz): verlangter Preis an dem Tag, geltende 30-Tage-Referenz
-mit dem **Beleg-Intervall, aus dem sie stammt**, der Zustand samt Begründung, die
-Tagesabdeckung des Fensters mit benannten Lücken, sämtliche Preisintervalle und alles,
-was laut `pss_write_log` je geschrieben wurde.
+* **Farbe trägt nie allein.** Jeder Status hat Zeichen UND Wort (✓ gesund, ! Anlauf,
+  × fehlgeschlagen, ◌ läuft, ◧ Einrichtung) — Barrierefreiheit und zugleich die
+  Voraussetzung, dass ein Schwarzweißdruck lesbar bleibt.
+* **Rot ist echten Vorfällen vorbehalten.**
 
-Das Diagramm ist serverseitiges SVG — kein JavaScript, keine externen Skripte, druckbar.
-**Gezeichnet als Treppe, nicht als Kurve:** Ein Preis gilt über sein Intervall konstant
-und springt dann; eine interpolierte Linie behauptete Zwischenpreise, die es nie gab.
-Bei einem Beweismittel ist das keine Kosmetik. Lücken unterbrechen die Linie, statt sie
-zu überbrücken.
+### „Nie gelaufen" ist kein Vorfall
 
-`bin/demo-seed.php` legt drei Beispielartikel an, damit die Seiten vor dem ersten
-Echtlauf prüfbar sind. Es **verweigert den Dienst in `prod`** — erfundene Preise haben in
-der Beweisgrundlage nichts zu suchen.
+Der vorherige Stand zeigte für ein System, das noch nie gelaufen war, achtmal
+„Lücke > 26 h" in Rot plus einen Lauf mit Status `failed` und Notiz „laeuft". **Wenn ab
+Tag 1 alles rot ist, ist Rot ab Tag 30 bedeutungslos** — Alarmmüdigkeit ist bei einem
+Compliance-Werkzeug gefährlich.
+
+`markt_zustand()` unterscheidet deshalb: `einrichtung` (kein erfolgreicher Lauf) ·
+`laeuft` · `anlauf` (mit Fortschrittsbalken) · `vorfall` · `gesund`. Und die
+Einrichtungs-Märkte werden zu **einem** Punkt zusammengefasst — sieben gleichlautende
+Zeilen wären wieder Tapete, nur in anderer Farbe. Die Plakette sagt dann
+„Aufbau läuft — noch nichts zu beanstanden", nicht „7 Probleme".
+
+`run_log.status` kennt jetzt `laeuft`; ein Lauf ohne Abschluss wird vom **nächsten** Lauf
+desselben Marktes ehrlich als `failed` geschlossen (»abgebrochen — kein Abschluss
+protokolliert«), statt aus dem Alter geraten zu werden.
+
+> **Der gemeldete „Umlaut-Fehler" war keiner.** Geprüft: `utf8mb4` trägt
+> „Zeitüberschreitung · Prüfläufe · 79,95 €" fehlerfrei durch Verbindung, Spalte und
+> Rücklesen. Die Ursache war banal — **ich** hatte die Notizen ohne Umlaute geschrieben
+> („laeuft", „geaendert"), eine Angewohnheit aus Shell-Heredocs. Behoben wurde der Text,
+> nicht der Zeichensatz.
+
+### Ein Satz oben, dann Handlungen statt Zähler
+
+Die Übersicht beantwortet zuerst: *„Muss ich hinfassen?"* Darunter die konkreten Punkte
+mit Kontext und nächstem Schritt. Ein Dashboard, das nur zählt, erzwingt Detektivarbeit;
+eines, das verlinkt, erledigt sie — **jede Zahl in der Markttabelle ist ein Link** auf die
+entsprechend gefilterte Artikelliste.
+
+Der Trockenmodus steht als Chip permanent im Kopf, und alle Schreibzahlen tragen `sim.`
+Die Kachel „Mit Referenz im PSS" zeigt im Trockenmodus **0**, nicht einen alten Stand:
+Eine veraltete Zahl, die aussieht wie eine aktuelle, ist schlimmer als keine.
+
+### Die Artikelliste umfasst ALLE Artikel
+
+**Vorgabe GRUBE, 18.08.2026.** Der vorherige Stand listete nur laufende Aktionen — an
+einen ruhenden Artikel kam man nur heran, wenn man seine Nummer auswendig wusste. Ein
+Nachweiswerkzeug, das den gesuchten Artikel nicht finden lässt, ist im Ernstfall wertlos.
+Die Filter (`alle` · `in Aktion` · `ohne Aktion` · `Risiko` · `Fenster unvollständig`)
+sind Einschränkungen einer vollständigen Liste, keine Vorauswahl; dazu Suche nach
+Artikelnummer und Blätterung zu 100 Zeilen.
+
+### Die Nachweisseite ist das Herzstück
+
+Signatur ist der **Messschrieb**: Treppenkurve, Fenster als schattiertes Band, Referenz
+als rote Treppenlinie, PREV violett nur in Aktionsphasen, Stichtags-Läufer. Dazu die
+Stichtagsprüfung als Stempelblock und ein **Druckmodus**, der die Seite in ein
+eigenständiges Beweisdokument verwandelt: Kopfbogen mit Artikel, Zeitraum, Ersteller und
+Quellenangabe erscheint nur im Druck, Navigation und Suche verschwinden.
+
+Fällt die Referenz unter die Vorstufe, erklärt ein Hinweiskasten den Grund — so vermittelt
+die Seite die Rechtslogik nebenbei jedem, der sie öffnet.
+
+### Anmeldung
+
+Generische Fehlermeldung (die Maske darf kein Kontoverzeichnis werden), Versuchssperre
+nach 5 Fehlversuchen je Konto+IP für 15 Minuten, `session_regenerate_id(true)` bei Erfolg
+und **jeder** Versuch im `login_log` mit Zeit, Konto und IP. Gehasht wird mit
+`PASSWORD_DEFAULT` (derzeit bcrypt); das Template nannte argon2id — der Unterschied ist
+hier ohne Belang, wichtig ist das Verfahren, nicht die Marke.
 
 ## Befehle
 

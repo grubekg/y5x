@@ -67,7 +67,10 @@ CREATE TABLE IF NOT EXISTS {{P}}run_log (
   pss_writes     INT NOT NULL DEFAULT 0,
   anomalies      INT NOT NULL DEFAULT 0,
   errors         INT NOT NULL DEFAULT 0,
-  status         ENUM('ok','partial','failed') NOT NULL DEFAULT 'failed',
+  -- 'laeuft' ist der Startzustand. Ein Lauf ohne Abschluss bleibt darauf stehen und
+  -- wird vom naechsten Lauf desselben Marktes als 'failed' geschlossen — so ist der
+  -- Unterschied zwischen "arbeitet gerade" und "abgestuerzt" belegt, nicht geraten.
+  status         ENUM('laeuft','ok','partial','failed') NOT NULL DEFAULT 'laeuft',
   note           TEXT NULL,
   KEY idx_tag (run_date, market)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -97,4 +100,15 @@ CREATE TABLE IF NOT EXISTS {{P}}users (
   password_hash VARCHAR(255) NOT NULL,
   created_at    DATETIME NULL,
   last_login    DATETIME NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Anmeldeversuche — Auditspur und Speicher der Versuchssperre.
+CREATE TABLE IF NOT EXISTS {{P}}login_log (
+  id          BIGINT AUTO_INCREMENT PRIMARY KEY,
+  username    VARCHAR(190) NOT NULL,
+  ip          VARCHAR(45)  NOT NULL,
+  erfolg      TINYINT(1)   NOT NULL DEFAULT 0,
+  versucht_at DATETIME     NOT NULL,
+  KEY idx_sperre (username, ip, versucht_at),
+  KEY idx_zeit (versucht_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

@@ -24,6 +24,7 @@ function y5x_runtime(): string
 }
 
 require y5x_runtime() . '/autoload.php';
+require __DIR__ . '/stil.php';
 
 function db(): Db
 {
@@ -47,9 +48,14 @@ function h($s): string
     return \htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
 }
 
+/** Deutsches Zahlenformat mit schmalem Leerzeichen — Beträge sollen in Spalten stehen. */
 function geld(?string $v, string $cur = 'EUR', int $stellen = 2): string
 {
-    return $v === null ? '—' : \number_format((float) $v, $stellen, ',', '.') . ' ' . $cur;
+    if ($v === null) {
+        return '—';
+    }
+    $zeichen = ['EUR' => '€', 'CHF' => 'CHF', 'SEK' => 'kr', 'DKK' => 'kr', 'PLN' => 'zł'];
+    return \number_format((float) $v, $stellen, ',', '.') . "\u{202f}" . ($zeichen[$cur] ?? $cur);
 }
 
 function datum(?string $d): string
@@ -72,6 +78,18 @@ function current_user(): string
     return (string) ($_SESSION['user'] ?? 'anonym');
 }
 
+/**
+ * Anmeldung.
+ *
+ * Drei Dinge, die bei einem Werkzeug mit Beweisfunktion nicht verhandelbar sind:
+ *
+ * * **Die Meldung bleibt generisch.** „E-Mail oder Passwort stimmen nicht" verrät nicht,
+ *   ob das Konto existiert — sonst wird die Anmeldemaske zum Kontoverzeichnis.
+ * * **Versuchssperre.** Nach fünf Fehlversuchen je Konto+IP ist 15 Minuten Ruhe, und
+ *   auch das wird generisch gemeldet.
+ * * **Jeder Versuch wird protokolliert**, Erfolg wie Fehlschlag, mit Zeit, Konto und IP.
+ *   Ein Werkzeug, das Beweise führt, muss auch belegen können, wer es bedient hat.
+ */
 function require_login(): void
 {
     start_session();
@@ -79,83 +97,197 @@ function require_login(): void
         return;
     }
     $fehler = '';
+    $ip = (string) ($_SERVER['REMOTE_ADDR'] ?? 'cli');
+
     if (($_POST['action'] ?? '') === 'login') {
-        $u = \strtolower(\trim((string) ($_POST['username'] ?? '')));
-        $row = db()->one('SELECT * FROM {p}users WHERE username = ?', [$u]);
-        if ($row && \password_verify((string) ($_POST['password'] ?? ''), $row['password_hash'])) {
-            $_SESSION['user'] = $u;
-            db()->execute('UPDATE {p}users SET last_login = NOW() WHERE id = ?', [$row['id']]);
-            \header('Location: ?');
-            exit;
+        $u = strtolower(trim((string) ($_POST['username'] ?? '')));
+        $gesperrt = (int) (db()->one(
+            'SELECT COUNT(*) AS n FROM {p}login_log
+              WHERE username = ? AND ip = ? AND erfolg = 0
+                AND versucht_at > DATE_SUB(NOW(), INTERVAL 15 MINUTE)',
+            [$u, $ip])['n'] ?? 0);
+
+        if ($gesperrt >= 5) {
+            $fehler = 'Zu viele Versuche — bitte in 15 Minuten erneut probieren.';
+        } else {
+            $row = db()->one('SELECT * FROM {p}users WHERE username = ?', [$u]);
+            $ok = $row && password_verify((string) ($_POST['password'] ?? ''), $row['password_hash']);
+            db()->execute(
+                'INSERT INTO {p}login_log (username, ip, erfolg, versucht_at) VALUES (?,?,?,NOW())',
+                [$u, $ip, $ok ? 1 : 0]);
+            if ($ok) {
+                session_regenerate_id(true);   // Sitzungsfixierung ausschliessen
+                $_SESSION['user'] = $u;
+                db()->execute('UPDATE {p}users SET last_login = NOW() WHERE id = ?', [$row['id']]);
+                header('Location: ?');
+                exit;
+            }
+            $fehler = 'E-Mail-Adresse oder Passwort stimmen nicht. '
+                    . 'Nach 5 Fehlversuchen wird der Zugang 15 Minuten gesperrt.';
         }
-        $fehler = 'Anmeldung fehlgeschlagen.';
     }
-    ?><!doctype html><meta charset="utf-8"><title>y5x — Anmeldung</title>
-    <style>body{font:15px/1.5 system-ui;margin:8rem auto;max-width:22rem;color:#222}
-    input{width:100%;padding:.6rem;margin:.3rem 0;border:1px solid #bbb;border-radius:4px}
-    button{padding:.6rem 1rem;margin-top:.6rem}.f{color:#a00}</style>
-    <h1>30-Tage-Bestpreis-Tracker</h1>
-    <?php if ($fehler !== '') { echo '<p class="f">' . h($fehler) . '</p>'; } ?>
-    <form method="post"><input type="hidden" name="action" value="login">
-      <input name="username" placeholder="E-Mail-Adresse" autofocus>
-      <input name="password" type="password" placeholder="Passwort"><button>Anmelden</button>
-    </form>
-    <p style="color:#888;font-size:.85em">Umgebung: <?= h(y5x_env()) ?></p>
-    <?php
+    anmeldeseite($fehler);
     exit;
 }
 
-/** Kopf und Stil — an einer Stelle, damit die Anlage einheitlich aussieht. */
-function seitenkopf(string $titel): void
+function anmeldeseite(string $fehler = ''): void
 {
-    ?><!doctype html><html lang="de"><meta charset="utf-8">
-<title>y5x — <?= h($titel) ?></title>
+    $env = y5x_env();
+    ?><!doctype html><html lang="de"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bestpreis-Tracker — Anmeldung</title>
+<?php y5x_stil(); ?>
 <style>
- body{font:14px/1.55 system-ui,sans-serif;margin:0;color:#1c1c1c;background:#f6f6f4}
- header{background:#1f3a5f;color:#fff;padding:.75rem 1.2rem;display:flex;
-        justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap}
- header a{color:#cfe0f5}
- main{padding:1.2rem;max-width:1180px;margin:0 auto}
- h2{font-size:1.05rem;margin:1.6rem 0 .6rem}
- .kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.7rem}
- .kpi div{background:#fff;border:1px solid #e2e2de;border-radius:6px;padding:.6rem .8rem}
- .kpi b{display:block;font-size:1.5rem;line-height:1.2}
- .kpi span{color:#666;font-size:.82em}
- table{border-collapse:collapse;width:100%;background:#fff;font-size:.92em}
- th,td{border:1px solid #e2e2de;padding:.32rem .5rem;text-align:left;vertical-align:top}
- th{background:#f0f0ec;font-weight:600}
- td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
- .warn{color:#8a4b00;font-weight:600}
- .bad{color:#a01818;font-weight:600}
- .ok{color:#1d6b2a}
- .tag{display:inline-block;padding:.05rem .4rem;border-radius:3px;font-size:.8em;
-      background:#eceae4;border:1px solid #dcdad2}
- .tag.promo{background:#fde9d0;border-color:#f0c68c}
- .tag.aus{background:#eee;color:#666}
- .hinweis{color:#666}
- .verlauf{background:#fff;border:1px solid #e2e2de;border-radius:6px}
- .verlauf .linie{fill:none;stroke:#1f3a5f;stroke-width:2}
- .verlauf .referenz{stroke:#a01818;stroke-width:1.5;stroke-dasharray:5 3}
- .verlauf .prev{stroke:#7a4fa3;stroke-width:1.5;stroke-dasharray:2 4}
- .verlauf .mini.pv{fill:#7a4fa3}
- .verlauf .stichtag{stroke:#1d6b2a;stroke-width:1.5;stroke-dasharray:2 2}
- .verlauf .fenster{fill:#1f3a5f;opacity:.06}
- .verlauf .aktion{fill:#e8890c;opacity:.13}
- .verlauf .raster{stroke:#e8e8e4;stroke-width:1}
- .verlauf .achse{font-size:10px;fill:#777}
- .verlauf .mini{font-size:10px;fill:#666}
- .verlauf .mini.ref{fill:#a01818}
- form.suche{margin:.6rem 0 1rem;display:flex;gap:.4rem;flex-wrap:wrap}
- form.suche input,form.suche select{padding:.35rem .5rem;border:1px solid #ccc;border-radius:4px}
- .beleg{background:#fff;border:1px solid #e2e2de;border-left:4px solid #1f3a5f;
-        border-radius:6px;padding:.7rem .9rem;margin:.6rem 0}
- @media print{header{background:#fff;color:#000}body{background:#fff}
-   .kpi div,table,.verlauf,.beleg{break-inside:avoid}form.suche{display:none}}
+ html,body{height:100%}
+ body{display:grid;place-items:center;padding:1.2rem;font-size:15px}
+ .motiv{position:fixed;inset:0;pointer-events:none;z-index:0}
+ .motiv svg{width:100%;height:100%}
+ .buehne{position:relative;z-index:1;width:min(24.5rem,100%)}
+ .marke-gross{margin:0 0 .9rem}
+ .marke-gross b{font-size:1.15rem}
+ .marke-gross small{display:block;color:var(--neutral);font-size:.72rem;
+   letter-spacing:.16em;text-transform:uppercase;margin-top:.15rem}
+ .anmeldung{background:var(--karte);border:1px solid var(--linie);border-radius:10px;
+   padding:1.3rem 1.4rem 1.5rem;box-shadow:0 1px 2px rgba(20,35,27,.06)}
+ .kopfzeile{display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem}
+ .kopfzeile h1{font-size:1.02rem;margin:0}
+ .umgebung{border-radius:99px;padding:.14rem .6rem;font-size:.76rem;font-weight:700}
+ .umgebung.staging{background:#f2c14e;color:#241d05}
+ .umgebung.prod{background:var(--tanne-hell);color:#fff}
+ .fehlerkasten{background:var(--vorfall-flaeche);border:1px solid #e5b8b4;
+   border-left:4px solid var(--vorfall);border-radius:8px;padding:.6rem .8rem;
+   margin-bottom:1rem;font-size:.9rem}
+ .fehlerkasten b{color:var(--vorfall)}
+ .anmeldung label{display:block;font-size:.78rem;color:var(--neutral);font-weight:600;
+   letter-spacing:.04em;margin:0 0 .25rem}
+ .anmeldung input{width:100%;padding:.6rem .65rem;border:1px solid var(--linie-stark);
+   border-radius:7px;background:#fff;font:inherit;margin-bottom:.9rem}
+ .anmeldung .knopf{width:100%;padding:.65rem .9rem;font-size:.95rem;margin-top:.2rem}
+ .hilfe{margin-top:.9rem;font-size:.82rem;color:var(--neutral)}
+ .fuss{margin-top:1rem;color:var(--neutral);font-size:.76rem;display:flex;
+   justify-content:space-between;gap:1rem;flex-wrap:wrap}
+ @media (prefers-reduced-motion:no-preference){
+   .anmeldung{animation:auftauchen .28s ease-out}
+   @keyframes auftauchen{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+ }
 </style>
+</head><body>
+<div class="motiv" aria-hidden="true">
+  <svg viewBox="0 0 1200 620" preserveAspectRatio="xMidYMid slice">
+    <rect x="470" y="0" width="300" height="620" fill="#2e5240" opacity=".05"/>
+    <path d="M-20,180 H360 V330 H620 V180 H900 V430 H1220" fill="none"
+          stroke="#14231b" stroke-width="3" opacity=".07" stroke-linejoin="round"/>
+    <path d="M-20,196 H900 V346 H1220" fill="none" stroke="#a8231b"
+          stroke-width="2" stroke-dasharray="9 7" opacity=".08"/>
+  </svg>
+</div>
+<div class="buehne">
+  <p class="marke-gross"><b>Bestpreis-Tracker</b>
+    <small>Preisnachweis · § 11 PAngV · GRUBE KG</small></p>
+  <div class="anmeldung">
+    <div class="kopfzeile">
+      <h1>Anmeldung</h1>
+      <span class="umgebung <?= $env === 'prod' ? 'prod' : 'staging' ?>"><?= h($env) ?></span>
+    </div>
+    <?php if ($fehler !== ''): ?>
+    <div class="fehlerkasten" role="alert"><b>Anmeldung nicht möglich.</b> <?= h($fehler) ?></div>
+    <?php endif; ?>
+    <form method="post">
+      <input type="hidden" name="action" value="login">
+      <label for="a-mail">E-Mail-Adresse</label>
+      <input id="a-mail" name="username" type="email" class="mono" required autofocus
+             autocomplete="username" spellcheck="false">
+      <label for="a-pass">Passwort</label>
+      <input id="a-pass" name="password" type="password" required autocomplete="current-password">
+      <button class="knopf" type="submit">Anmelden</button>
+    </form>
+    <p class="hilfe">Zugang verloren oder neues Konto nötig?
+      <a href="mailto:ecommerce@grube.de">Kurze Nachricht genügt</a> — es gibt bewusst
+      keinen Selbstservice zum Zurücksetzen.</p>
+  </div>
+  <p class="fuss"><span>Internes Werkzeug · Anmeldungen werden protokolliert</span>
+    <span class="mono">Läufe täglich 05:30</span></p>
+</div>
+</body></html>
+    <?php
+}
+
+/**
+ * Zustand eines Marktes — die Logik hinter den Statuszeichen.
+ *
+ * **„Nie gelaufen" ist kein Vorfall, sondern ein Einrichtungszustand.** Der vorherige
+ * Stand zeigte für ein System, das noch nie gelaufen war, achtmal „Lücke > 26 h" in Rot.
+ * Wenn ab Tag 1 alles rot ist, ist Rot ab Tag 30 bedeutungslos — Alarmmüdigkeit ist bei
+ * einem Compliance-Werkzeug gefährlich. Rot bleibt deshalb echten Vorfällen vorbehalten.
+ *
+ * @return array{code:string, wort:string, klasse:string, detail:string}
+ */
+function markt_zustand(array $lauf, array $kennzahl, array $konfig, ?array $anlauf): array
+{
+    if (($lauf['offen'] ?? null) !== null) {
+        return ['code' => 'laeuft', 'wort' => 'läuft', 'klasse' => 'laeuft',
+                'detail' => 'seit ' . date('H:i', strtotime($lauf['offen']))];
+    }
+    if (($lauf['zuletzt_ok'] ?? null) === null) {
+        return ['code' => 'einrichtung', 'wort' => 'Einrichtung', 'klasse' => 'einrichtung',
+                'detail' => 'noch kein erfolgreicher Lauf'];
+    }
+    $alter = time() - strtotime((string) $lauf['zuletzt_ok']);
+    if (($lauf['letzter_status'] ?? '') === 'failed') {
+        return ['code' => 'vorfall', 'wort' => 'Lauf fehlgeschlagen', 'klasse' => 'vorfall',
+                'detail' => 'letzter erfolgreicher Lauf ' . zeitspanne($alter) . ' her'];
+    }
+    if ($alter > 26 * 3600) {
+        return ['code' => 'vorfall', 'wort' => 'Lauf ausgeblieben', 'klasse' => 'vorfall',
+                'detail' => 'letzter Lauf ' . zeitspanne($alter) . ' her'];
+    }
+    if ($anlauf !== null && $anlauf['tag'] < $anlauf['ziel']) {
+        return ['code' => 'anlauf', 'wort' => 'Anlauf', 'klasse' => 'warn',
+                'detail' => sprintf('Tag %d von %d — Referenz reift', $anlauf['tag'], $anlauf['ziel'])];
+    }
+    return ['code' => 'gesund', 'wort' => 'gesund', 'klasse' => 'ok',
+            'detail' => 'letzter Lauf ' . zeitspanne($alter) . ' her'];
+}
+
+function zeitspanne(int $sekunden): string
+{
+    if ($sekunden < 90)   { return 'gerade eben'; }
+    if ($sekunden < 5400) { return round($sekunden / 60) . ' min'; }
+    if ($sekunden < 172800) { return round($sekunden / 3600) . ' h'; }
+    return round($sekunden / 86400) . ' Tage';
+}
+
+function zahl(int|float|string|null $n): string
+{
+    return $n === null ? '—' : number_format((float) $n, 0, ',', '.');
+}
+
+/** Kopf und Stil — an einer Stelle, damit beide Seiten dieselbe Anlage ergeben. */
+function seitenkopf(string $titel, string $aktiv = ''): void
+{
+    $app = cfg('app');
+    $trocken = (bool) ($app['dry_run'] ?? true);
+    ?><!doctype html><html lang="de"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bestpreis-Tracker — <?= h($titel) ?></title>
+<?php y5x_stil(); ?>
+</head><body>
 <header>
-  <b>30-Tage-Bestpreis-Tracker</b>
-  <nav><a href="index.php">Übersicht</a> · <a href="artikel.php">Artikel &amp; Nachweis</a></nav>
-  <span><?= h(y5x_env()) ?> · <?= h(current_user()) ?></span>
+  <div class="marke">Bestpreis-Tracker<small>Preisnachweis · § 11 PAngV</small></div>
+  <nav aria-label="Bereiche">
+    <a href="index.php"<?= $aktiv === 'index' ? ' aria-current="page"' : '' ?>>Übersicht</a>
+    <a href="artikel.php"<?= $aktiv === 'artikel' ? ' aria-current="page"' : '' ?>>Artikel &amp; Nachweis</a>
+  </nav>
+  <div class="chipzeile">
+    <?php if ($trocken): ?>
+    <span class="chip trocken" title="dry_run: true — es wird gerechnet und protokolliert, aber nicht in den PSS geschrieben">Trockenmodus</span>
+    <?php else: ?>
+    <span class="chip scharf" title="dry_run: false — Schreibsätze gehen an den PSS">scharf geschaltet</span>
+    <?php endif; ?>
+    <span class="chip"><?= h(y5x_env()) ?></span>
+    <span class="chip mono">Stand <?= date('d.m.Y · H:i') ?></span>
+    <span class="chip"><?= h(current_user()) ?></span>
+  </div>
 </header>
 <main>
     <?php

@@ -134,7 +134,7 @@ final class Run
     {
         if (!Money::isPositive($gross)) { return 'Bruttopreis nicht positiv'; }
         if (!Money::isPositive($net))   { return 'Nettopreis nicht positiv'; }
-        if (Money::compare($net, $gross) > 0) { return 'netto groesser als brutto'; }
+        if (Money::compare($net, $gross) > 0) { return 'netto größer als brutto'; }
         return null;
     }
 
@@ -218,17 +218,29 @@ final class Run
 
     private function laufBeginnen(string $markt, \DateTimeImmutable $heute): int
     {
+        // Ein Lauf, der nie abgeschlossen wurde, bleibt auf 'laeuft' stehen. Der
+        // naechste Lauf desselben Marktes schliesst ihn ehrlich als abgebrochen ab —
+        // damit ist der Unterschied zwischen "arbeitet gerade" und "abgestuerzt"
+        // belegt und nicht aus dem Alter geraten.
         $this->db->execute(
-            'INSERT INTO {p}run_log (run_date, market, started_at, status, note)
-             VALUES (?,?,NOW(),\'failed\',?)',
-            [$heute->format('Y-m-d'), $markt, 'laeuft']);
+            "UPDATE {p}run_log SET status = 'failed', finished_at = NOW(),
+                note = CONCAT(COALESCE(note,''), ' | abgebrochen — kein Abschluss protokolliert')
+             WHERE market = ? AND status = 'laeuft'", [$markt]);
+
+        $this->db->execute(
+            "INSERT INTO {p}run_log (run_date, market, started_at, status, note)
+             VALUES (?,?,NOW(),'laeuft',?)",
+            [$heute->format('Y-m-d'), $markt, 'Erfassung läuft']);
         return (int) $this->db->pdo()->lastInsertId();
     }
 
     private function laufBeenden(int $id, array $z, array $fehlerarten = [],
                                 array $anomalien = []): void
     {
-        $notiz = 'kein PSS-Write (Adapter noch nicht gebaut)';
+        // Notizen in ordentlichem Deutsch: Sie stehen auf der Statusseite und im
+        // Zweifel in einem Schriftsatz. utf8mb4 traegt Umlaute und € fehlerfrei durch
+        // Verbindung, Spalte und Rücklesen — geprüft am 18.08.2026.
+        $notiz = 'kein PSS-Write (Schreib-Adapter noch nicht gebaut)';
         if ($anomalien !== []) {
             $notiz .= ' | verworfen: ' . \implode('; ', \array_slice($anomalien, 0, 10))
                 . (\count($anomalien) > 10 ? \sprintf(' … (+%d weitere)', \count($anomalien) - 10) : '');

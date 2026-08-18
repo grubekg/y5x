@@ -17,7 +17,7 @@ namespace Grube\Price30\Support;
  */
 final class Db
 {
-    private const TABLES = ['price_events', 'price_state', 'run_log', 'pss_write_log', 'users'];
+    private const TABLES = ['price_events', 'price_state', 'run_log', 'pss_write_log', 'users', 'login_log'];
 
     private ?\PDO $pdo = null;
 
