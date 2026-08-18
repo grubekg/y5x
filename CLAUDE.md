@@ -235,6 +235,66 @@ Die 90 verworfenen Datensätze sind keine Rundungsfehler:
 Der dritte Fall ist der interessanteste — in Polen etwa `netto 5.405,00 / brutto 4.800,00`.
 Jeder verworfene Datensatz steht mit Artikelnummer und Begründung im `run_log`.
 
+## ⚠️ OFFENER GRUNDSATZFEHLER: Die Preisquelle sieht keine Aktionen (18.08.2026)
+
+**Der Test, der alles auf den Kopf stellt.** GRUBE hat auf der Integ für Artikel
+`3049187041` (Markt DE) eine **20-%-Aktion** aktiviert. Der Shop verlangt seitdem
+**159,20 €**. Gelesen haben wir **199,00 €**.
+
+| Quelle | Preis |
+|---|---|
+| **Storefront `integ.grube.de`** | **159,20 €** ← was tatsächlich verlangt wird |
+| `/admin/pssoverview/prices/shop/get/…` | 199,00 € |
+| Object Storage `prices` | 199,00 € |
+| Object Storage **`promotionPrices`** | 199,00 € |
+| Object Storage `netPromotionPrices` | 167,23 € (= netto zu 199,00) |
+| Object Storage `unrebatedPrices` | 199,00 € |
+
+**Keine einzige Admin- oder PSS-Quelle kennt die Aktion** — auch nicht die, die
+„promotion" im Namen trägt. Auf der Produktion zeigt dieselbe Abfrage 199,00 €, dort
+läuft die Aktion nicht; der Unterschied liegt also an der Aktion, nicht an der Umgebung.
+
+**Damit ist die Kernanforderung verletzt.** § 1 verlangt „den im Shop tatsächlich
+angewendeten Endpreis". Ein Tracker auf dieser Quelle würde eine Aktion **nie** bemerken:
+keine Zustandsänderung, keine eingefrorene Referenz, und in `price_events` stünde für
+jeden Aktionstag der Nicht-Aktionspreis. Die Beweisgrundlage behauptete dann einen Preis,
+der nie verlangt wurde — das Gegenteil dessen, wofür es das Werkzeug gibt.
+
+Das bestätigt die frühere Auskunft („es gibt Aktionen, die im PSS nicht abgebildet sind")
+in der schärfsten Form: Sie sind **nirgends** in den Schnittstellen abgebildet.
+
+### Was die Aktion kennt: die Storefront
+
+Die Produktseite führt den angewendeten Preis **maschinenlesbar je Artikel** als
+schema.org-Angebot:
+
+```json
+{"@type":"Offer","sku":"3049187041","price":"159.20","priceCurrency":"EUR"}
+```
+
+Ein `AggregateOffer` je Produkt enthält ein `Offer` je Artikel — eine Seite deckt also
+alle Varianten ab. `highPrice`/`lowPrice` liefern zusätzlich die Spanne.
+
+### Geprüfte Sackgassen
+
+* `/admin/downloadItemFeed` — **HTTP 500 nach 222 s**.
+* `/admin/publishedPromotions`, `/admin/promotions` — **404** auf beiden Umgebungen.
+* `productDownloader/info` — `availableFiles: []`.
+
+Es gibt also weder einen Feed mit angewendeten Preisen noch eine Liste laufender
+Aktionen, über die sich die Storefront-Abfrage auf betroffene Artikel eingrenzen ließe.
+
+### Die Optionen — Entscheidung offen
+
+| Weg | Aufwand | Bewertung |
+|---|---|---|
+| **Produktseiten lesen** (~13.500 je Markt) | bei 800 Anfragen/2 min rund **34 min je Markt**, 4,5 h für acht | funktioniert, ist aber ein Vielfaches des heutigen Laufs und belastet die eigene Storefront |
+| **Aktionsliste vom Shop-Team** | offen | wäre der Hebel: Sammelabzug für die Grundpreise, Storefront nur für die wenigen Artikel in Aktion |
+| **Preisendpunkt mit Aktionen** | offen | die saubere Lösung — muss das Shop-Team liefern |
+
+**Bis das geklärt ist, darf `dry_run: false` in der Produktion nicht gesetzt werden.** Die
+Werte wären systematisch zu hoch, sobald irgendwo eine Aktion läuft.
+
 ## Der Schreibweg in den PSS (18.08.2026 ermittelt, TODO(setup) 2 und 6 erledigt)
 
 **Es gibt eine Integrationsumgebung, und dort gehören solche Versuche hin:**
@@ -796,6 +856,8 @@ php bin/demo-seed.php [--loeschen]           # Beispieldaten (nur staging)
    Leerung, neue priceTypes ohne Anmeldung. Offen bleibt allein die **Freigabe**, wann
    `dry_run: false` in Produktion gesetzt wird.
 3. Zeitpunkt des täglichen DiVA-Preisimports je Shop (Cron danach).
+3b. **VORRANGIG: eine Preisquelle, die Aktionen kennt** — siehe den Warnabschnitt oben.
+   Ohne sie ist das Werkzeug nicht produktionsreif, so vollständig es sonst ist.
 4. Entscheidung Anlauf: **Vorlauf** (30 Tage vor werblicher Nutzung produktiv) vs.
    **Backfill** (existiert eine Preishistorie der letzten 30+ Tage?).
 5. `alert_email` und die Shop-Kennungen je Markt für `markets.yml`.
