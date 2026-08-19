@@ -200,7 +200,12 @@ $belegt = \count(\array_filter($fensterTage, static fn($t) => $t['gross'] !== nu
   [$sku, $markt]); ?>
 <?php if ($writes === []): ?>
 <p class="fuss">Für diesen Artikel wurde noch kein Wert an den PSS übertragen<?=
-  ($app['dry_run'] ?? true) ? ' (Trockenmodus)' : '' ?>.</p>
+  h(match (schreibmodi()[$markt] ?? 'unbekannt') {
+      'gesperrt' => ' (dieser Markt wird bewusst nur beobachtet)',
+      'trocken'  => ' (der letzte Lauf hat nicht geschrieben)',
+      'unbekannt'=> ' (Schreibmodus der bisherigen Läufe nicht festgehalten)',
+      default    => '',
+  }) ?>.</p>
 <?php else: ?>
 <table>
 <tr><th>Zeitpunkt</th><th>Eintrag</th><th class="z">alt</th><th class="z">neu</th><th>Ergebnis</th></tr>

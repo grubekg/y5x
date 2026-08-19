@@ -32,7 +32,11 @@ $markt    = \trim((string) ($_GET['markt'] ?? 'DE'));
 $filter   = (string) ($_GET['filter'] ?? 'alle');
 $suche    = \trim((string) ($_GET['q'] ?? ''));
 $stichtag = \trim((string) ($_GET['stichtag'] ?? \date('Y-m-d')));
-$trocken  = (bool) ($app['dry_run'] ?? true);
+// Schreibmodus des letzten abgeschlossenen Laufs DIESES Marktes — nicht aus `dry_run`
+// in der app.yml, siehe schreibmodi() in lib.php. Je Markt, weil CH dauerhaft nur
+// beobachtet wird, waehrend die sieben anderen scharf schreiben.
+$modus    = schreibmodi()[$markt] ?? 'unbekannt';
+$trocken  = $modus !== 'scharf';
 $tage     = (int) ($app['window_days'] ?? 30);
 
 $fenster = new PriceWindow($tage);
@@ -161,7 +165,10 @@ if ($sku === ''):
         : '<span class="status warn">unvollständig</span>' ?></td>
   <td class="mono"><?= $r['last_written_at']
         ? h(\date('d.m.Y H:i', \strtotime((string) $r['last_written_at'])))
-        : '<span class="sub" style="font-family:system-ui">' . ($trocken ? 'Trockenmodus' : 'noch nie') . '</span>' ?></td>
+        : '<span class="sub" style="font-family:system-ui">' . h(match ($modus) {
+              'gesperrt' => 'nur Beobachtung', 'trocken' => 'nicht geschrieben',
+              default    => 'noch nie',
+          }) . '</span>' ?></td>
 </tr>
 <?php endforeach; ?>
 </tbody>
@@ -272,9 +279,12 @@ else:
     <?= $jetzt?->windowComplete
         ? '<span class="status ok">Fenster vollständig</span>'
         : '<span class="status warn">Fenster unvollständig</span>' ?>
-    <?= (maerkte()[$markt]['write_enabled'] ?? false)
-        ? ($trocken ? '<span class="status aus">Trockenmodus</span>' : '<span class="status ok">Schreiben aktiv</span>')
-        : '<span class="status aus">nur Beobachtung</span>' ?>
+    <?= match ($modus) {
+        'scharf'   => '<span class="status ok">Schreiben aktiv</span>',
+        'gesperrt' => '<span class="status aus">nur Beobachtung</span>',
+        'trocken'  => '<span class="status aus">Trockenmodus</span>',
+        default    => '<span class="status aus">Schreibmodus unbekannt</span>',
+    } ?>
     <span class="shoplink">
       <?php if ($link !== null): ?>
         <a href="<?= h($link) ?>" target="_blank" rel="noopener"
@@ -357,7 +367,7 @@ also genau der Zeitraum, aus dem die ausgewiesene Referenz stammt.</p>
 <h2>Aktuelle Werte &amp; Zustand</h2>
 <div class="raster">
   <div class="karte">
-    <h3>Referenzwerte<?= $trocken ? ' (simuliert)' : ' im PSS' ?></h3>
+    <h3>Referenzwerte<?= $trocken ? ' (berechnet, nicht übertragen)' : ' im PSS' ?></h3>
     <div class="etikett">
       <span class="typ">30_GROSS</span>
       <span class="wert"><?= geld($ref?->gross, $waehrung) ?></span>
@@ -471,9 +481,11 @@ foreach ($writes as $w): ?>
 <?php endforeach; ?>
 <?php if ($writes === []): ?>
 <tr><td colspan="5" style="color:var(--neutral)">
-  <?= $trocken
-    ? 'Trockenmodus — es wurde noch nichts an den PSS übertragen.'
-    : 'Noch kein Schreibvorgang protokolliert.' ?></td></tr>
+  <?= h(match ($modus) {
+      'gesperrt' => 'Nur Beobachtung — für diesen Markt wird bewusst nicht übertragen.',
+      'trocken'  => 'Trockenmodus — der letzte Lauf hat nichts an den PSS übertragen.',
+      default    => 'Noch kein Schreibvorgang protokolliert.',
+  }) ?></td></tr>
 <?php endif; ?>
 </tbody>
 </table>

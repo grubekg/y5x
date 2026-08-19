@@ -104,6 +104,11 @@ nicht nur auf einzelne Wörter, die ganze Zeile ist die Schaltfläche.
 Gelistet werden **alle** Artikel, nicht nur die in Aktion: Im Streitfall braucht man
 Zugriff auf jeden Artikel, auch auf einen, der gerade nicht reduziert ist.
 
+Die Spalte **Schreibsätze** nennt neben der Zahl den Modus des letzten Laufs dieses
+Marktes (`trocken`, `nur Beobachtung` für CH, `Modus unbekannt` für Läufe vor dem
+19.08.2026). Er kommt aus der Laufzeile, nicht aus der Konfiguration — warum das der
+Unterschied zwischen richtig und falsch ist, steht in Abschnitt 5.1.
+
 ### 3.2 Artikelseite
 
 Artikelnummer eingeben oder aus der Liste wählen. Markt und Stichtag werden über Auswahl
@@ -220,6 +225,33 @@ wird lang, geschrieben kurz.
 Schreibvorgang wird beim nächsten Lauf von selbst nachgeholt, weil das Delta dann noch
 offen ist.
 
+### 5.1 Der Schreibmodus steht in der Laufzeile, nicht in der Konfiguration
+
+Ob ein Lauf tatsächlich geschrieben hat, entscheidet die Kommandozeile: `--write` steht
+im Trigger. In der `app.yml` bleibt `dry_run: true` bewusst stehen — so überträgt ein von
+Hand gestarteter Lauf nichts, und Scharfschalten ist genau ein sichtbarer Weg.
+
+Genau deshalb darf der Modus **nicht** aus der Konfiguration abgelesen werden. Bis zum
+19.08.2026 tat das Dashboard aber genau das und meldete „Trockenmodus, 0 Schreibsätze",
+während am selben Morgen **391.968 Sätze fehlerfrei an den PSS gegangen waren**; das
+`run_log` trug fest `pss_writes = 0` und die Notiz „Schreib-Adapter noch nicht gebaut" —
+ein Rest aus der Zeit vor dem Schreibadapter. Für ein Werkzeug, das eine Beweiskette
+trägt, ist ein falsches Protokoll schlimmer als gar keines.
+
+Seit dem 19.08.2026 hält jede Zeile im `run_log` ihren eigenen Modus fest:
+
+| Modus | Bedeutung |
+|---|---|
+| `scharf` | Sätze sind an den PSS gegangen; `pss_writes` zählt sie, `write_errors` die gescheiterten |
+| `trocken` | vollständig gerechnet und protokolliert, nichts übertragen |
+| `gesperrt` | `write_enabled` ist für diesen Markt aus (dauerhaft für **CH**) |
+| `unbekannt` | Läufe vor dem 19.08.2026 — für sie wurde der Modus nie festgehalten |
+
+Die Läufe vom 19.08.2026 wurden aus dem Schreibprotokoll (`pss_write_log`) rekonstruiert;
+das ist die belastbare Quelle, der Zähler im `run_log` war es nie. Die Notiz jeder
+betroffenen Zeile sagt das ausdrücklich. Ein Schreibfehler setzt den Lauf jetzt — wie ein
+Lesefehler — auf `partial`.
+
 ---
 
 ## 6. Umgebungen
@@ -274,6 +306,7 @@ entscheidet.
 
 | Datum | Was |
 |---|---|
+| 19.08.2026 | **Falsches Schreibprotokoll behoben** — `run_log` trug `pss_writes = 0` und „Schreib-Adapter noch nicht gebaut", während 391.968 Sätze im PSS standen; Schreibmodus je Lauf, Dashboard liest ihn aus der Zeile statt aus `dry_run` (Abschnitt 5.1) |
 | 18.08.2026 | Produktivstellung: Prod-Umgebung, Cron über `trigger.php`, Vorlauf gestartet |
 | 18.08.2026 | **Preisquelle korrigiert** — `promotionPrices` am langen MCS; 3.331 übersehene Aktionen |
 | 18.08.2026 | Schreibweg gebündelt (500 Einträge je Aufruf statt 2), Steuerabrufe entfallen |

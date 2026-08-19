@@ -65,6 +65,12 @@ CREATE TABLE IF NOT EXISTS {{P}}run_log (
   items_fetched  INT NOT NULL DEFAULT 0,
   price_changes  INT NOT NULL DEFAULT 0,
   pss_writes     INT NOT NULL DEFAULT 0,
+  -- Der Schreibmodus gehoert zum LAUF: `--write` steht im Trigger, `dry_run` bleibt in
+  -- der app.yml bewusst auf true. Wer den Modus aus der Datei liest statt aus der Zeile,
+  -- behauptet Trockenmodus, waehrend Saetze im PSS stehen (passiert am 19.08.2026).
+  -- 'unbekannt' gilt nur fuer Laeufe vor dieser Spalte.
+  write_mode     ENUM('unbekannt','scharf','trocken','gesperrt') NOT NULL DEFAULT 'unbekannt',
+  write_errors   INT NOT NULL DEFAULT 0,
   anomalies      INT NOT NULL DEFAULT 0,
   errors         INT NOT NULL DEFAULT 0,
   -- 'laeuft' ist der Startzustand. Ein Lauf ohne Abschluss bleibt darauf stehen und

@@ -409,6 +409,23 @@ pruefe('letzter Fenstertag ist 30.08.', $tage[29]['date'] === '2026-08-30', $tag
 $mitPreis = array_filter($tage, static fn($t) => $t['gross'] !== null);
 pruefe('alle 30 Fenstertage sind mit einem Preis belegt', count($mitPreis) === 30);
 
+// --------------------------------------- das Protokoll darf nicht falsch berichten
+echo "\n[Schreibprotokoll — der Lauf berichtet ueber sich selbst]\n";
+// Bis zum 19.08.2026 schrieb laufBeenden() fest `pss_writes = 0` und die Notiz
+// "Schreib-Adapter noch nicht gebaut", waehrend an diesem Tag 391.968 Saetze
+// fehlerfrei an den PSS gingen. Ein Werkzeug, das eine Beweiskette traegt, darf ueber
+// die eigene Arbeit nicht falsch berichten — deshalb steht das hier als Riegel.
+$quelle = (string) file_get_contents(__DIR__ . '/../src/Cli/Run.php');
+pruefe('kein fest verdrahtetes pss_writes = 0 mehr',
+    !str_contains($quelle, 'pss_writes = 0,'));
+pruefe('die Notiz behauptet keinen fehlenden Schreibadapter',
+    !str_contains($quelle, 'Schreib-Adapter noch nicht gebaut'));
+pruefe('laufBeenden nimmt den Schreibmodus des Laufs entgegen',
+    (new ReflectionMethod(\Grube\Price30\Cli\Run::class, 'laufBeenden'))
+        ->getNumberOfParameters() === 5);
+pruefe('der Schreibmodus wird in die Zeile geschrieben',
+    str_contains($quelle, 'write_mode = ?') && str_contains($quelle, 'write_errors = ?'));
+
 echo "\n" . (empty($FAILS)
     ? "ALLE SZENARIEN BESTANDEN"
     : count($FAILS) . ' FEHLGESCHLAGEN: ' . implode(', ', $FAILS)) . "\n";

@@ -111,6 +111,13 @@ final class Run
         $trocken = (bool) ($this->app['dry_run'] ?? true);
         $marktFrei = (bool) ($m['write_enabled'] ?? false);
         $schreiben = $this->pss !== null && !$trocken && $marktFrei;
+        // Der Modus wird MITGESCHRIEBEN, nicht spaeter aus der Konfiguration erschlossen:
+        // `--write` steht auf der Kommandozeile des Triggers, `dry_run: true` bleibt in
+        // der app.yml der Auslieferungszustand. Wer den Modus hinterher aus der Datei
+        // liest, bekommt zuverlaessig die falsche Antwort. `gesperrt` steht vor
+        // `trocken`, weil es die dauerhafte Aussage ist: Fuer CH aendert ein
+        // Scharfschalten nichts, solange Legal nicht entschieden hat.
+        $schreibmodus = $schreiben ? 'scharf' : (!$marktFrei ? 'gesperrt' : 'trocken');
         $this->melden(\sprintf('Schreiben: %s', $schreiben ? 'AKTIV' : \sprintf(
             'aus (%s)', $this->pss === null ? 'kein Adapter'
                 : ($trocken ? 'Trockenmodus' : 'write_enabled=false fuer ' . $markt))),
@@ -299,7 +306,7 @@ final class Run
         $zaehler['write_fehler'] += $fehl;
 
         \arsort($fehlerarten);
-        $this->laufBeenden($lauf, $zaehler, $fehlerarten, $anomalien);
+        $this->laufBeenden($lauf, $zaehler, $fehlerarten, $anomalien, $schreibmodus);
         foreach (\array_slice($anomalien, 0, 5) as $a) {
             $this->melden('  VERWORFEN  ' . $a, true);
         }
@@ -622,12 +629,29 @@ final class Run
     }
 
     private function laufBeenden(int $id, array $z, array $fehlerarten = [],
-                                array $anomalien = []): void
+                                array $anomalien = [], string $schreibmodus = 'unbekannt'): void
     {
         // Notizen in ordentlichem Deutsch: Sie stehen auf der Statusseite und im
         // Zweifel in einem Schriftsatz. utf8mb4 traegt Umlaute und € fehlerfrei durch
         // Verbindung, Spalte und Rücklesen — geprüft am 18.08.2026.
-        $notiz = 'kein PSS-Write (Schreib-Adapter noch nicht gebaut)';
+        //
+        // Bis zum 19.08.2026 stand hier fest 'kein PSS-Write (Schreib-Adapter noch nicht
+        // gebaut)' und `pss_writes = 0` — ein Rest aus der Zeit vor dem Schreibadapter.
+        // Am 19.08.2026 gingen 391.968 Saetze fehlerfrei an den PSS, waehrend das
+        // Protokoll das Gegenteil behauptete. Ein Werkzeug, das eine Beweiskette traegt,
+        // darf ueber die eigene Arbeit nicht falsch berichten.
+        $schreibsaetze = (int) ($z['writes'] ?? 0);
+        $schreibfehler = (int) ($z['write_fehler'] ?? 0);
+        $notiz = match ($schreibmodus) {
+            'scharf'   => \sprintf('scharf geschrieben: %s Schreibsätze',
+                              \number_format($schreibsaetze, 0, ',', '.')),
+            'gesperrt' => 'nicht geschrieben — write_enabled ist für diesen Markt aus',
+            'trocken'  => 'nicht geschrieben — Trockenmodus',
+            default    => 'Schreibmodus nicht festgehalten',
+        };
+        if ($schreibfehler > 0) {
+            $notiz .= \sprintf(' | %d Schreibfehler', $schreibfehler);
+        }
         if ($anomalien !== []) {
             $notiz .= ' | verworfen: ' . \implode('; ', \array_slice($anomalien, 0, 10))
                 . (\count($anomalien) > 10 ? \sprintf(' … (+%d weitere)', \count($anomalien) - 10) : '');
@@ -635,11 +659,15 @@ final class Run
         foreach (\array_slice($fehlerarten, 0, 3, true) as $art => $n) {
             $notiz .= \sprintf(' | %dx %s', $n, \mb_substr((string) $art, 0, 120));
         }
+        // Ein Schreibfehler macht den Lauf `partial`, genau wie ein Lesefehler: Beides
+        // heisst, dass der Tag nicht vollstaendig belegt ist.
+        $status = ($z['fehler'] > 0 || $schreibfehler > 0) ? 'partial' : 'ok';
         $this->db->execute(
             'UPDATE {p}run_log SET finished_at = NOW(), items_fetched = ?, price_changes = ?,
-                pss_writes = 0, anomalies = ?, errors = ?, status = ?, note = ? WHERE id = ?',
-            [$z['gelesen'], ($z['neu'] ?? 0) + ($z['geaendert'] ?? 0), $z['anomalien'],
-             $z['fehler'], $z['fehler'] > 0 ? 'partial' : 'ok',
+                pss_writes = ?, write_mode = ?, write_errors = ?, anomalies = ?, errors = ?,
+                status = ?, note = ? WHERE id = ?',
+            [$z['gelesen'], ($z['neu'] ?? 0) + ($z['geaendert'] ?? 0), $schreibsaetze,
+             $schreibmodus, $schreibfehler, $z['anomalien'], $z['fehler'], $status,
              $notiz, $id]);
     }
 

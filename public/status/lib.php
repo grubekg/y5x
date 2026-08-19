@@ -500,11 +500,40 @@ function zahl(int|float|string|null $n): string
     return $n === null ? '—' : number_format((float) $n, 0, ',', '.');
 }
 
+/**
+ * Schreibmodus je Markt — aus dem letzten abgeschlossenen Lauf, NICHT aus der app.yml.
+ *
+ * `--write` steht in der Kommandozeile des Triggers, `dry_run: true` bleibt in der
+ * Konfiguration bewusst der Auslieferungszustand. Eine Seite, die den Modus aus der
+ * Datei liest, meldet deshalb zuverlaessig Trockenmodus, waehrend Saetze im PSS stehen
+ * — genau das tat sie bis zum 19.08.2026, an dem 391.968 Saetze uebertragen wurden.
+ *
+ * @return array<string,string> Marktkuerzel => unbekannt|scharf|trocken|gesperrt
+ */
+function schreibmodi(): array
+{
+    static $modi = null;
+    if ($modi !== null) { return $modi; }
+    $modi = [];
+    foreach (db()->query(
+        "SELECT market,
+                SUBSTRING_INDEX(GROUP_CONCAT(write_mode ORDER BY id DESC), ',', 1) AS modus
+           FROM {p}run_log WHERE status IN ('ok','partial') GROUP BY market") as $r) {
+        $modi[(string) $r['market']] = (string) $r['modus'];
+    }
+    return $modi;
+}
+
+/** Hat der letzte Lauf irgendeines Marktes tatsaechlich in den PSS geschrieben? */
+function schreibt_scharf(): bool
+{
+    return \in_array('scharf', schreibmodi(), true);
+}
+
 /** Kopf und Stil — an einer Stelle, damit beide Seiten dieselbe Anlage ergeben. */
 function seitenkopf(string $titel, string $aktiv = ''): void
 {
-    $app = cfg('app');
-    $trocken = (bool) ($app['dry_run'] ?? true);
+    $trocken = !schreibt_scharf();
     ?><!doctype html><html lang="de"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Preisschreiber — <?= h($titel) ?></title>
@@ -519,9 +548,9 @@ function seitenkopf(string $titel, string $aktiv = ''): void
   </nav>
   <div class="chipzeile">
     <?php if ($trocken): ?>
-    <span class="chip trocken" title="dry_run: true — es wird gerechnet und protokolliert, aber nicht in den PSS geschrieben">Trockenmodus</span>
+    <span class="chip trocken" title="Der letzte Lauf hat nicht in den PSS geschrieben — gerechnet und protokolliert wird trotzdem vollständig">Trockenmodus</span>
     <?php else: ?>
-    <span class="chip scharf" title="dry_run: false — Schreibsätze gehen an den PSS">scharf geschaltet</span>
+    <span class="chip scharf" title="Der letzte Lauf hat Schreibsätze an den PSS übertragen">scharf geschaltet</span>
     <?php endif; ?>
     <span class="chip"><?= h(y5x_env()) ?></span>
     <span class="chip mono">Stand <?= date('d.m.Y · H:i') ?></span>

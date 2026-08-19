@@ -14,7 +14,10 @@ require_login();
 
 $app     = cfg('app');
 $maerkte = maerkte();
-$trocken = (bool) ($app['dry_run'] ?? true);
+// Der Schreibmodus kommt aus dem letzten Lauf, nicht aus `dry_run` in der app.yml —
+// siehe schreibmodi() in lib.php. Je Markt, weil CH dauerhaft nur beobachtet wird.
+$modi    = schreibmodi();
+$trocken = !schreibt_scharf();
 $fensterTage = (int) ($app['window_days'] ?? 30);
 
 // --- Kennzahlen je Markt ----------------------------------------------------
@@ -44,7 +47,8 @@ foreach (db()->query(
 }
 $sieben = [];
 foreach (db()->query(
-    "SELECT market, SUM(pss_writes) AS writes, SUM(errors) AS errors, SUM(anomalies) AS anomalien
+    "SELECT market, SUM(pss_writes) AS writes, SUM(errors) AS errors,
+            SUM(write_errors) AS schreibfehler, SUM(anomalies) AS anomalien
        FROM {p}run_log WHERE run_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY) GROUP BY market") as $r) {
     $sieben[$r['market']] = $r;
 }
@@ -145,8 +149,8 @@ seitenkopf('Übersicht', 'index');
          <?= \count($aktiveMaerkte) ?> Märkten in Betrieb ·
          <?= zahl($summe('artikel')) ?> Artikel getrackt ·
          <?= $trocken
-            ? 'Trockenmodus aktiv, der PSS bleibt unverändert'
-            : '<b>scharf geschaltet</b> — Schreibsätze gehen an den PSS' ?>.</p>
+            ? 'der letzte Lauf hat nicht geschrieben, der PSS bleibt unverändert'
+            : '<b>scharf</b> — der letzte Lauf hat Schreibsätze an den PSS übertragen' ?>.</p>
     </div>
   </div>
 
@@ -187,10 +191,9 @@ seitenkopf('Übersicht', 'index');
   </div>
   <div>
     <span class="label">Mit Referenz im PSS</span>
-    <b><?= $trocken ? '0' : zahl($summe('geschrieben')) ?></b>
-    <span class="def"><?= $trocken
-      ? 'im Trockenmodus wird nicht geschrieben — Schreibsätze werden simuliert'
-      : 'Schreibziel 30_NET / 30_GROSS' ?></span>
+    <b><?= zahl($summe('geschrieben')) ?></b>
+    <span class="def">Schreibziel 30_NET / 30_GROSS<?= $trocken
+      ? ' — der letzte Lauf hat nichts übertragen' : '' ?></span>
   </div>
 </div>
 
@@ -247,7 +250,15 @@ seitenkopf('Übersicht', 'index');
   <td class="mono"><?= !empty($lauf['zuletzt_ok'])
         ? h(\date('d.m.Y H:i', \strtotime((string) $lauf['zuletzt_ok'])))
         : '—' ?><span class="sub"><?= h($z['detail']) ?></span></td>
-  <td class="zahl"><?= zahl((int) ($w['writes'] ?? 0)) ?><?= $trocken ? ' <span class="sub">sim.</span>' : '' ?></td>
+  <td class="zahl"><?= zahl((int) ($w['writes'] ?? 0)) ?><?php
+      $mm = $modi[$code] ?? 'unbekannt';
+      if ($mm === 'gesperrt') { echo ' <span class="sub">nur Beobachtung</span>'; }
+      elseif ($mm === 'trocken') { echo ' <span class="sub">trocken</span>'; }
+      elseif ($mm === 'unbekannt') { echo ' <span class="sub">Modus unbekannt</span>'; }
+      if ((int) ($w['schreibfehler'] ?? 0) > 0) {
+          echo ' <span class="sub" style="color:var(--vorfall)">'
+             . zahl((int) $w['schreibfehler']) . ' Fehler</span>';
+      } ?></td>
   <td class="zahl<?= (int) ($w['errors'] ?? 0) > 0 ? ' ' : '' ?>"
       <?= (int) ($w['errors'] ?? 0) > 0 ? 'style="color:var(--vorfall);font-weight:700"' : '' ?>>
       <?= zahl((int) ($w['errors'] ?? 0)) ?></td>
@@ -266,10 +277,11 @@ seitenkopf('Übersicht', 'index');
   <dt>Nur Beobachtung (CH)</dt><dd>Preise werden erfasst und belegt, aber nicht
     geschrieben — die Schweizer Preisbekanntgabeverordnung folgt eigenen Regeln; die
     Freigabe durch Legal steht aus.</dd>
-  <?php if ($trocken): ?>
-  <dt>Trockenmodus</dt><dd>Berechnung und Protokoll laufen vollständig, Schreibsätze
-    werden simuliert (<code>sim.</code>) und nicht an den PSS übertragen.</dd>
-  <?php endif; ?>
+  <dt>Schreibmodus</dt><dd>Steht je Lauf in der Zeile, nicht in der Konfiguration:
+    <code>scharf</code> = übertragen, <code>trocken</code> = nur gerechnet,
+    <code>gesperrt</code> = <code>write_enabled</code> aus (CH),
+    <code>unbekannt</code> = Läufe vor dem 19.08.2026, für die der Modus nicht
+    festgehalten wurde.</dd>
 </dl>
 
 <h2>Letzte Läufe</h2>
@@ -295,7 +307,15 @@ seitenkopf('Übersicht', 'index');
   <td><span class="status <?= $klasse ?>"><?= h($wort) ?></span></td>
   <td class="zahl"><?= zahl((int) $r['items_fetched']) ?></td>
   <td class="zahl"><?= zahl((int) $r['price_changes']) ?></td>
-  <td class="zahl"><?= zahl((int) $r['pss_writes']) ?><?= $trocken ? ' <span class="sub">sim.</span>' : '' ?></td>
+  <td class="zahl"><?= zahl((int) $r['pss_writes']) ?><?php
+      if (($r['write_mode'] ?? 'unbekannt') !== 'scharf') {
+          echo ' <span class="sub">' . h(match ($r['write_mode'] ?? 'unbekannt') {
+              'gesperrt' => 'gesperrt', 'trocken' => 'trocken', default => 'Modus unbekannt',
+          }) . '</span>';
+      } elseif ((int) ($r['write_errors'] ?? 0) > 0) {
+          echo ' <span class="sub" style="color:var(--vorfall)">'
+             . zahl((int) $r['write_errors']) . ' Fehler</span>';
+      } ?></td>
   <td class="zahl"><?= zahl((int) $r['anomalies']) ?></td>
   <td class="mono"><?= h($dauer) ?></td>
   <td><?= h(\mb_substr((string) $r['note'], 0, 120)) ?></td>
