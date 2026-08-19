@@ -18,6 +18,12 @@ declare(strict_types=1);
  * überhaupt: Alles meldet Erfolg, und im Shop steht nichts. Diese Prüfung fragt
  * deshalb nach, statt zu glauben — und zwar mit Abstand zum Schreiben, denn genau
  * dazwischen geht der Wert verloren.
+ *
+ * **Ursache geklärt am 19.08.2026** (Entwickler iSHOP): Der große ERP-Import ersetzt den
+ * Preisbestand eines Landes und räumt dabei alles weg, was nicht aus ihm stammt. Behoben
+ * durch `provider=preisschreiber` im Schreibschlüssel. Die Prüfung bleibt trotzdem — sie
+ * ist der Riegel, der den Fehler überhaupt sichtbar gemacht hat, und der nächste Import,
+ * der etwas anders macht, fällt wieder nur hier auf.
  */
 require __DIR__ . '/../autoload.php';
 
@@ -57,8 +63,12 @@ foreach ($markets as $code => $m) {
         continue;
     }
     $waehrung = (string) ($m['currency'] ?? 'EUR');
-    $mcs = \sprintf('[brand=%s country=%s currency=%s]',
-        (string) ($m['shop_brand'] ?? 'grube'), \strtolower((string) $code), $waehrung);
+    // Derselbe Schluessel, unter dem geschrieben wird — mit `provider`. Ohne ihn suchte
+    // die Pruefung an der Stelle, an der seit dem 19.08.2026 nichts mehr steht, und
+    // meldete dauerhaft "alles weg".
+    $mcs = \sprintf('[brand=%s country=%s currency=%s provider=%s]',
+        (string) ($m['shop_brand'] ?? 'grube'), \strtolower((string) $code), $waehrung,
+        \Grube\Price30\Cli\Run::PROVIDER);
 
     // Zufällige Stichprobe statt der ersten N: Die ersten N sind immer dieselben
     // Artikel, und ein Verlust, der nur einen Teil des Sortiments trifft, bliebe

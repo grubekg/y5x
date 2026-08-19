@@ -129,7 +129,6 @@ final class Run
         // einzelne Artikel, ist aber fuer einen Lauf ueber das Sortiment untauglich:
         // 35.641 Anfragen je Markt, und die anderen sieben Maerkte kaeme er gar nicht.
         $sammel = null;
-        $mcs = $this->mcs($markt, $waehrung);
         $gruppe = (string) ($m['price_group'] ?? 'DEFAULT');
         $mcsLang = $this->mcsPaar($markt, $waehrung)['mcs_lang'];
         // Fuer einen einzelnen Artikel lohnt der Sammelabzug nicht: 382 MB laden und
@@ -461,7 +460,7 @@ final class Run
     private function pssSchreiben(string $sku, string $markt, string $waehrung,
                                   $ref, array $vorher, ?string $vat): array
     {
-        $mcs = $this->mcs($markt, $waehrung);
+        $mcs = $this->mcsSchreiben($markt, $waehrung);
         $extra = $this->steuerAngaben($vat);
 
         $felder = [
@@ -562,6 +561,41 @@ final class Run
     }
 
     /**
+     * Der Schlüssel, unter dem GESCHRIEBEN wird — mit `provider=preisschreiber`.
+     *
+     * **Warum das nicht kosmetisch ist** (Auskunft Entwickler iSHOP, 19.08.2026): Der
+     * große ERP-Import ersetzt den Preisbestand eines Landes und räumt dabei alles weg,
+     * was nicht aus ihm stammt. Genau das ist am 19.08.2026 passiert — 391.968 Sätze
+     * gingen mit HTTP 204 hinaus und waren eine halbe Stunde später für DE, FR, SE und DK
+     * spurlos verschwunden, während AT, PL und SK stehen blieben. Der Unterschied waren
+     * nicht die Märkte, sondern der Importlauf: Wo einer lief, war unsere Zeile weg.
+     *
+     * Der Zusatz `provider=preisschreiber` macht aus dem Schlüssel einen eigenen, den der
+     * Import nicht anfasst. Er gehört **ausschließlich in den Schreibweg**: Gelesen wird
+     * aus dem Object Storage des Shops, und der kennt diesen Schlüssel nicht — ein
+     * Leseversuch damit fände nichts und sähe aus wie ein Markt ohne Preise.
+     *
+     * Reihenfolge wie vom Entwickler vorgegeben und wie im PSS üblich alphabetisch:
+     * `[brand=grube country=de currency=EUR provider=preisschreiber]`.
+     */
+    private function mcsSchreiben(string $markt, string $waehrung): string
+    {
+        $m = $this->markets[$markt] ?? [];
+        return \sprintf('[brand=%s country=%s currency=%s provider=%s]',
+            (string) ($m['shop_brand'] ?? 'grube'), \strtolower($markt), $waehrung,
+            self::PROVIDER);
+    }
+
+    /**
+     * Die Kennung, unter der dieses Werkzeug im PSS schreibt.
+     *
+     * Steht bewusst als Konstante und nicht in der `app.yml`: Änderte sie sich, stünden
+     * die bisherigen Werte unter einem Schlüssel, den niemand mehr liest — und niemand
+     * würde es merken, weil weiterhin alles nach Erfolg aussähe.
+     */
+    public const PROVIDER = 'preisschreiber';
+
+    /**
      * Beide MCS-Formen des Marktes — die zum Lesen und die zum Schreiben.
      *
      * Der Shop führt Listenpreis und Aktionspreis an unterschiedlich langen Schlüsseln,
@@ -570,8 +604,13 @@ final class Run
      *
      * | | Schlüssel | wofür |
      * |---|---|---|
-     * | `mcs_kurz` | `[brand=grube country=de currency=EUR]` | `prices`, und **alles Schreiben** |
+     * | `mcs_kurz` | `[brand=grube country=de currency=EUR]` | `prices` (nur **Lesen**) |
      * | `mcs_lang` | `[brand=grube channel=web country=de currency=EUR language=de store=]` | `promotionPrices` |
+     * | Schreiben | `[brand=grube country=de currency=EUR provider=preisschreiber]` | {@see mcsSchreiben} |
+     *
+     * **Geschrieben wird seit dem 19.08.2026 unter einem eigenen Schlüssel mit
+     * `provider=preisschreiber`** — sonst räumt der große ERP-Import die Werte wieder
+     * weg. Der kurze Schlüssel ohne Provider ist damit reiner Leseschlüssel.
      *
      * Die lange Form ist der **Standard-Kanal** `web` mit leerem `store`. `webapp` und
      * `webwhitelabel` gibt es nur für einzelne Märkte und sie führten in der Stichprobe

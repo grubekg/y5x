@@ -269,45 +269,64 @@ das ist die belastbare Quelle, der Zähler im `run_log` war es nie. Die Notiz je
 betroffenen Zeile sagt das ausdrücklich. Ein Schreibfehler setzt den Lauf jetzt — wie ein
 Lesefehler — auf `partial`.
 
-### 5.2 Geschrieben heißt nicht gespeichert (offener Befund, 19.08.2026)
+### 5.2 Geschrieben unter eigenem Schlüssel — sonst räumt der ERP-Import auf
 
-Der PSS quittierte am 19.08.2026 alle **391.968 Schreibsätze mit HTTP 204**. Eine halbe
-Stunde später war für **DE, FR, SE und DK kein einziger davon mehr auffindbar**; für
-**AT, PL und SK** standen sie vollständig da. Gemessen an einer Stichprobe von 25
-Artikeln je Markt:
+**Geschrieben wird unter `provider=preisschreiber`:**
+
+```
+[brand=grube country=de currency=EUR provider=preisschreiber]
+```
+
+Ohne diesen Zusatz bleiben die Werte nicht stehen. Der Befund vom 19.08.2026: Der PSS
+quittierte alle **391.968 Schreibsätze mit HTTP 204** — eine halbe Stunde später war für
+**DE, FR, SE und DK kein einziger davon mehr auffindbar**, für **AT, PL und SK** standen
+sie vollständig da (Stichprobe 25 Artikel je Markt):
 
 | | DE | AT | FR | PL | SK | SE | DK |
 |---|---|---|---|---|---|---|---|
 | vorhanden | 0 | 25 | 0 | 25 | 25 | 0 | 0 |
 | fehlt | 25 | 0 | 25 | 0 | 0 | 25 | 25 |
 
-**Am Schreibweg liegt es nicht:** Ein sofort wiederholter Schreibsatz für dieselben
-Artikel und dieselben Märkte landete, war unmittelbar danach lesbar und stand zehn
-Minuten später unverändert da. Auch die Form stimmt — es ist derselbe kurze MCS,
-dieselbe `customerGroup`, dieselben Felder wie bei den Märkten, die bleiben.
+Am Schreibweg lag es nicht: Ein sofort wiederholter Schreibsatz landete, war lesbar und
+stand zehn Minuten später unverändert da.
 
-Die Werte werden also **nach dem Schreiben von außen wieder entfernt**. Wer oder was das
-tut, ist noch offen; die naheliegende Spur ist ein Preisimport, der den Bestand eines
-Landes ersetzt statt ergänzt und dabei fremde `priceType`-Einträge mitnimmt. Dazu passt,
-dass die drei überlebenden Märkte diejenigen sind, deren Preiseinträge seit Monaten
-unverändert sind (AT seit 09/2025, PL seit 03/2025, SK seit 2020), während DE und FR
-frisch importierte Einträge tragen.
+**Ursache (Entwickler iSHOP, 19.08.2026): Der große ERP-Import ersetzt den Preisbestand
+eines Landes und räumt dabei alles weg, was nicht aus ihm stammt.** Der Unterschied
+zwischen den Märkten waren nicht die Märkte, sondern der Importlauf — wo einer lief, war
+unsere Zeile weg. Deshalb hielten sich AT, PL und SK: deren Preiseinträge sind seit
+Monaten unverändert (AT 09/2025, PL 03/2025, SK 2020).
 
-**Das ist der gefährlichste Zustand, den dieses Werkzeug haben kann:** Jede Anzeige meldet
-Erfolg, und im Shop steht nichts. Deshalb gibt es seit dem 19.08.2026 die
-**Rücklese-Prüfung** `bin/nachlese.php` — sie fragt mit Abstand zum Schreiben nach, ob
-der geschriebene Wert noch da ist, und liefert die Fehlliste als CSV:
+Der Provider im Schlüssel macht daraus einen eigenen Eintrag, den der Import nicht
+anfasst. Er gehört **ausschließlich in den Schreibweg** — gelesen wird aus dem Object
+Storage des Shops, und der kennt diesen Schlüssel nicht.
+
+**Merksatz, der bleibt: Eine 2xx-Quittung des PSS beweist die Annahme, nicht den
+Bestand.** Nachgefragt wird deshalb mit der **Rücklese-Prüfung**, und zwar mit Abstand
+zum Schreiben — genau dazwischen ging der Wert verloren:
 
 ```
 php bin/nachlese.php [--stichprobe 50] [--market DE] [--csv befunde.csv]
 ```
 
-Rückgabewert 1, wenn etwas fehlt — damit ein Cron das auswerten kann.
+Zufallsstichprobe je Markt (nicht die ersten N — ein Teilverlust bliebe sonst dauerhaft
+unsichtbar), Fehlliste als CSV, Rückgabewert 1 wenn etwas fehlt. Die Prüfung bleibt
+dauerhaft: Sie hat den Fehler sichtbar gemacht, und der nächste Import, der etwas anders
+macht, fällt wieder nur hier auf.
 
-**Zusammenhang mit der Laufzeit:** Liegt der Lauf vor dem täglichen Preisimport, wäre
-genau dieses Bild zu erwarten. Die Produktion läuft seit dem 19.08.2026 um **07:30**.
-Bevor an der Ursache etwas geraten wird, sollte der Importzeitpunkt je Markt feststehen
-(offener Punkt 1).
+**Zwei Nacharbeiten gehören zu diesem Wechsel:**
+
+1. **Voller Neuschreiblauf** (`bin/neuschreiben.php --wirklich`, am 19.08.2026 für alle
+   195.946 Artikel×Markt ausgeführt). Der Delta-Write lässt aus, was sich nicht geändert
+   hat — geändert hatte sich aber nicht der Wert, sondern der Ort. Ohne den Schritt
+   bliebe unter dem neuen Schlüssel dauerhaft nichts stehen, und nichts sähe nach Fehler
+   aus.
+2. **Altlast unter dem alten Schlüssel** (`bin/altlast-raeumen.php`). Was ohne Provider
+   im PSS steht, fasst dieses Werkzeug nie wieder an: Es veraltet still und steht dabei
+   neben dem gültigen Wert. Bei DE, FR, SE und DK erledigt der Import das von selbst; bei
+   **AT, PL und SK** (rund 327.000 Schlüssel) bleibt es liegen. Zwei konkurrierende
+   `30_GROSS` für denselben Artikel sind keine Ordnungsfrage — es ist ein Referenzpreis,
+   der eine Werbeaussage trägt. **Steht aus, weil Löschen im Produktivsystem eine
+   ausdrückliche Freigabe braucht.**
 
 ---
 
@@ -347,12 +366,11 @@ entscheidet.
 
 ## 7. Offene Punkte
 
-1. **Wer entfernt die geschriebenen Referenzwerte?** (Abschnitt 5.2) — bis das geklärt
-   ist, stehen die Werte in vier von sieben schreibenden Märkten nicht im Shop. Das ist
-   der wichtigste offene Punkt; alles andere hier ist Feinschliff daneben.
+1. **Altlast unter dem alten Schlüssel räumen** (Abschnitt 5.2) — rund 327.000 Schlüssel
+   in AT, PL und SK. Braucht eine ausdrückliche Freigabe, weil im Produktivsystem
+   gelöscht wird; das Skript liegt bereit und zählt ohne `--wirklich` nur.
 2. **Zeitpunkt des DiVA-Preisimports je Markt** — der Produktionslauf liegt seit dem
-   19.08.2026 um 07:30. Ob der Import da durch ist, ist unbestätigt, und es hängt
-   unmittelbar am Befund aus Abschnitt 5.2.
+   19.08.2026 um 07:30. Bestätigt ist der Importzeitpunkt weiterhin nicht.
 3. **Längste geplante Aktionsdauer**, damit `permanent_after_days` sicher darüberliegt.
 4. **`prev_price_max_days` von Legal kalibrieren** (Vorgabe 42 Tage).
 5. **Soll `PREV_*` jemals leer sein?** Entscheidet, ob der Tracker die Leerung schreibt
@@ -367,7 +385,7 @@ entscheidet.
 
 | Datum | Was |
 |---|---|
-| 19.08.2026 | **Geschriebene Referenzwerte verschwinden wieder** (DE, FR, SE, DK) — gemessen und belegt, Ursache offen; Rücklese-Prüfung `bin/nachlese.php` gebaut (Abschnitt 5.2) |
+| 19.08.2026 | **Schreibschlüssel um `provider=preisschreiber` ergänzt** — der ERP-Import räumte die Werte sonst wieder weg (DE, FR, SE, DK waren komplett verschwunden); voller Neuschreiblauf, Rücklese-Prüfung `bin/nachlese.php` (Abschnitt 5.2) |
 | 19.08.2026 | Laufprotokoll als CSV herunterladbar — alle verworfenen Datensätze und Fehler statt zehn in einer Notizspalte |
 | 19.08.2026 | Produktionslauf auf 07:30 umgestellt (Angabe GRUBE) |
 | 19.08.2026 | **Falsches Schreibprotokoll behoben** — `run_log` trug `pss_writes = 0` und „Schreib-Adapter noch nicht gebaut", während 391.968 Sätze im PSS standen; Schreibmodus je Lauf, Dashboard liest ihn aus der Zeile statt aus `dry_run` (Abschnitt 5.1) |

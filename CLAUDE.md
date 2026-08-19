@@ -874,34 +874,45 @@ php bin/migrate.php --env staging            # Spalten in bestehenden Tabellen n
 php tests/run.php                            # 47 Szenarien, ohne Netz/DB/Composer
 php bin/demo-seed.php [--loeschen]           # Beispieldaten (nur staging)
 php bin/nachlese.php --stichprobe 50         # steht im PSS noch, was wir geschrieben haben?
+php bin/neuschreiben.php [--wirklich]        # nach Schluesselwechsel: alles neu schreiben lassen
+php bin/altlast-raeumen.php [--wirklich]     # Eintraege unter dem alten Schluessel entfernen
 ```
 
-## Geschrieben heißt nicht gespeichert — der wichtigste offene Befund (19.08.2026)
+## Geschrieben wird unter `provider=preisschreiber` — sonst räumt der ERP-Import auf
 
-**Der PSS quittiert Schreibsätze, behält sie aber nicht.** Am 19.08.2026 gingen 391.968
-Sätze mit HTTP 204 hinaus; eine halbe Stunde später war für **DE, FR, SE und DK kein
-einziger davon mehr auffindbar**, für **AT, PL und SK** standen alle da. Stichprobe von
-25 Artikeln je Markt, `bin/nachlese.php`:
+```
+Schreiben  [brand=grube country=de currency=EUR provider=preisschreiber]
+Lesen      [brand=grube country=de currency=EUR]                          (kurz, Object Storage)
+Lesen      [brand=grube channel=web country=de currency=EUR language=de store=]  (lang, Aktionen)
+```
+
+**Der Befund, der dahintersteckt (19.08.2026).** Der PSS quittierte 391.968 Schreibsätze
+mit HTTP 204; eine halbe Stunde später war für **DE, FR, SE und DK kein einziger davon
+mehr auffindbar**, für **AT, PL und SK** standen alle da. Stichprobe 25 Artikel je Markt
+(`bin/nachlese.php`):
 
 | | DE | AT | FR | PL | SK | SE | DK |
 |---|---|---|---|---|---|---|---|
 | vorhanden | 0 | 25 | 0 | 25 | 25 | 0 | 0 |
 | fehlt | 25 | 0 | 25 | 0 | 0 | 25 | 25 |
 
-**Am Schreibweg liegt es nicht** — das wurde geprüft, nicht vermutet: Ein sofort
-wiederholter `PATCH` für dieselben Artikel und dieselben Märkte landete, war unmittelbar
-danach lesbar und stand zehn Minuten später unverändert da. Form, MCS, `customerGroup`
-und Felder sind identisch mit denen der Märkte, die bleiben.
+Am Schreibweg lag es nicht — geprüft, nicht vermutet: Ein sofort wiederholter `PATCH` für
+dieselben Artikel und Märkte landete, war lesbar und stand zehn Minuten später
+unverändert da.
 
-Die Werte werden also **nach dem Schreiben von außen entfernt**. Die naheliegende Spur ist
-ein Preisimport, der den Bestand eines Landes ersetzt statt ergänzt: Die drei
-überlebenden Märkte sind genau die, deren Preiseinträge seit Monaten unverändert sind
-(AT 09/2025, PL 03/2025, SK 2020), während DE und FR frisch importierte Einträge tragen.
-Bestätigt ist das nicht — **nicht raten, den Importzeitpunkt je Markt erfragen.**
+**Ursache (Entwickler iSHOP): Der große ERP-Import ersetzt den Preisbestand eines Landes
+und räumt dabei alles weg, was nicht aus ihm stammt.** Der Unterschied zwischen den
+Märkten waren nicht die Märkte, sondern der Importlauf — wo einer lief, war unsere Zeile
+weg; AT, PL und SK hielten sich, weil ihre Preiseinträge seit Monaten unverändert sind
+(09/2025, 03/2025, 2020).
 
-**Warum das die gefährlichste Lage überhaupt ist:** Jede Anzeige meldet Erfolg, und im
-Shop steht nichts. Eine Erfolgsquittung beweist, dass der Aufruf angenommen wurde — nicht
-dass der Wert bleibt. Deshalb gibt es die Rücklese-Prüfung:
+Der Provider gehört **ausschließlich in den Schreibweg** ({@see Run::mcsSchreiben}).
+Gelesen wird aus dem Object Storage, und der kennt den Schlüssel nicht — ein Leseversuch
+damit fände nichts und sähe aus wie ein Markt ohne Preise.
+
+**Der Merksatz, der bleibt: Eine 2xx-Quittung beweist die Annahme, nicht den Bestand.**
+Deshalb bleibt die Rücklese-Prüfung dauerhaft — sie hat den Fehler überhaupt sichtbar
+gemacht, und der nächste Import, der etwas anders macht, fällt wieder nur hier auf:
 
 ```
 php bin/nachlese.php [--stichprobe 50] [--market DE] [--csv befunde.csv]
@@ -910,6 +921,21 @@ php bin/nachlese.php [--stichprobe 50] [--market DE] [--csv befunde.csv]
 Sie fragt **mit Abstand zum Schreiben** nach (genau dazwischen geht der Wert verloren),
 zieht eine Zufallsstichprobe je Markt — nicht die ersten N, sonst bliebe ein Teilverlust
 dauerhaft unsichtbar — und liefert Rückgabewert 1, wenn etwas fehlt.
+
+### Zwei Nacharbeiten gehören zu einem Schlüsselwechsel
+
+* **`bin/neuschreiben.php --wirklich`** — der Delta-Write lässt aus, was sich nicht
+  geändert hat; geändert hatte sich aber nicht der Wert, sondern der Ort. Am 19.08.2026
+  für alle 195.946 Artikel×Markt ausgeführt, danach ein voller Lauf. Bewusst kein
+  Migrationsskript: Migrationen laufen bei jedem Aufruf erneut, und ein versehentlich
+  wiederholter Vollschreiblauf über acht Märkte soll nicht nebenbei passieren.
+* **`bin/altlast-raeumen.php`** — die Einträge unter dem alten Schlüssel ohne Provider.
+  Dieses Werkzeug fasst sie nie wieder an: Sie veralten still und stehen dabei neben dem
+  gültigen Wert. Bei DE, FR, SE und DK erledigt der Import das von selbst; bei AT, PL und
+  SK bleiben rund 327.000 Schlüssel liegen. **Offen — Löschen im Produktivsystem braucht
+  eine ausdrückliche Freigabe.** Ohne `--wirklich` wird nur gezählt, und gelöscht werden
+  ausschließlich die vier eigenen `priceType`, Schlüssel für Schlüssel, nie über einen
+  Bereich.
 
 ## Betrieb
 

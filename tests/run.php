@@ -439,6 +439,31 @@ pruefe('der Deckel fuer Einzelbefunde steht als Konstante',
     (new ReflectionClassConstant(\Grube\Price30\Cli\Run::class, 'BEFUNDE_MAX'))
         ->getValue() > 0);
 
+// ----------------------------------------- der Schreibschluessel traegt den Provider
+echo "\n[Schreibschluessel — provider=preisschreiber]\n";
+// Der grosse ERP-Import ersetzt den Preisbestand eines Landes und raeumt alles weg, was
+// nicht aus ihm stammt (Auskunft Entwickler iSHOP, 19.08.2026). Ohne den Provider im
+// Schluessel verschwinden die Werte nach jedem Import wieder — und nichts sieht nach
+// Fehler aus, weil der PSS jeden Satz mit 204 quittiert.
+$schreibMcs = (new ReflectionMethod(\Grube\Price30\Cli\Run::class, 'mcsSchreiben'));
+$schreibMcs->setAccessible(true);
+$leer = (new ReflectionClass(\Grube\Price30\Cli\Run::class))->newInstanceWithoutConstructor();
+$maerkteFeld = (new ReflectionProperty(\Grube\Price30\Cli\Run::class, 'markets'));
+$maerkteFeld->setAccessible(true);
+$maerkteFeld->setValue($leer, ['DE' => ['currency' => 'EUR']]);
+$schluessel = $schreibMcs->invoke($leer, 'DE', 'EUR');
+pruefe('der Schreibschluessel entspricht der Vorlage des Entwicklers',
+    $schluessel === '[brand=grube country=de currency=EUR provider=preisschreiber]',
+    $schluessel);
+
+$leseMcs = (new ReflectionMethod(\Grube\Price30\Cli\Run::class, 'mcs'));
+$leseMcs->setAccessible(true);
+pruefe('der Leseschluessel bleibt OHNE Provider — der Shop kennt ihn nicht',
+    $leseMcs->invoke($leer, 'DE', 'EUR') === '[brand=grube country=de currency=EUR]');
+
+pruefe('die Kennung steht als Konstante, nicht in der Konfiguration',
+    \Grube\Price30\Cli\Run::PROVIDER === 'preisschreiber');
+
 echo "\n" . (empty($FAILS)
     ? "ALLE SZENARIEN BESTANDEN"
     : count($FAILS) . ' FEHLGESCHLAGEN: ' . implode(', ', $FAILS)) . "\n";
