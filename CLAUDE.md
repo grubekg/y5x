@@ -929,13 +929,17 @@ dauerhaft unsichtbar — und liefert Rückgabewert 1, wenn etwas fehlt.
   für alle 195.946 Artikel×Markt ausgeführt, danach ein voller Lauf. Bewusst kein
   Migrationsskript: Migrationen laufen bei jedem Aufruf erneut, und ein versehentlich
   wiederholter Vollschreiblauf über acht Märkte soll nicht nebenbei passieren.
-* **`bin/altlast-raeumen.php`** — die Einträge unter dem alten Schlüssel ohne Provider.
-  Dieses Werkzeug fasst sie nie wieder an: Sie veralten still und stehen dabei neben dem
-  gültigen Wert. Bei DE, FR, SE und DK erledigt der Import das von selbst; bei AT, PL und
-  SK bleiben rund 327.000 Schlüssel liegen. **Offen — Löschen im Produktivsystem braucht
-  eine ausdrückliche Freigabe.** Ohne `--wirklich` wird nur gezählt, und gelöscht werden
-  ausschließlich die vier eigenen `priceType`, Schlüssel für Schlüssel, nie über einen
-  Bereich.
+* **`bin/altlast-raeumen.php`** — die Einträge unter dem alten Schlüssel ohne Provider;
+  am 19.08.2026 nach Freigabe ausgeführt. Dieses Werkzeug hätte sie nie wieder angefasst:
+  Sie wären still veraltet und hätten dabei neben dem gültigen Wert gestanden. Zwei
+  konkurrierende `30_GROSS` sind bei einem Referenzpreis keine Ordnungsfrage.
+  Ohne `--wirklich` wird nur gezählt; gelöscht werden ausschließlich die vier eigenen
+  `priceType`, Schlüssel für Schlüssel, nie über einen Bereich — fremde Einträge bleiben
+  unberührt. Vorher an einem einzelnen Artikel geprobt (zwei AT-Alteinträge weg, die
+  übrigen 29 Einträge des Artikels unverändert), erst dann über den ganzen Bestand:
+  783.912 Schlüssel, 0 Fehler. Gegenprobe an 20 zufälligen Artikeln über alle Märkte —
+  232 eigene Einträge unter dem neuen Schlüssel, 0 unter dem alten, 9.943 fremde
+  unangetastet.
 
 ## Betrieb
 

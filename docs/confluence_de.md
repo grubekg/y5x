@@ -320,13 +320,21 @@ macht, fällt wieder nur hier auf.
    hat — geändert hatte sich aber nicht der Wert, sondern der Ort. Ohne den Schritt
    bliebe unter dem neuen Schlüssel dauerhaft nichts stehen, und nichts sähe nach Fehler
    aus.
-2. **Altlast unter dem alten Schlüssel** (`bin/altlast-raeumen.php`). Was ohne Provider
-   im PSS steht, fasst dieses Werkzeug nie wieder an: Es veraltet still und steht dabei
-   neben dem gültigen Wert. Bei DE, FR, SE und DK erledigt der Import das von selbst; bei
-   **AT, PL und SK** (rund 327.000 Schlüssel) bleibt es liegen. Zwei konkurrierende
-   `30_GROSS` für denselben Artikel sind keine Ordnungsfrage — es ist ein Referenzpreis,
-   der eine Werbeaussage trägt. **Steht aus, weil Löschen im Produktivsystem eine
-   ausdrückliche Freigabe braucht.**
+2. **Altlast unter dem alten Schlüssel** (`bin/altlast-raeumen.php`, am 19.08.2026 nach
+   Freigabe ausgeführt). Was ohne Provider im PSS stand, hätte dieses Werkzeug nie wieder
+   angefasst: Es wäre still veraltet und hätte dabei neben dem gültigen Wert gestanden.
+   Zwei konkurrierende `30_GROSS` für denselben Artikel sind keine Ordnungsfrage — es ist
+   ein Referenzpreis, der eine Werbeaussage trägt.
+
+   Gelöscht wurden ausschließlich die vier eigenen `priceType` unter dem alten Schlüssel,
+   Schlüssel für Schlüssel, nie über einen Bereich; fremde Einträge blieben unberührt.
+   Vorher an einem einzelnen Artikel geprobt: Die beiden AT-Alteinträge verschwanden, die
+   Provider-Einträge und alle übrigen 29 Einträge des Artikels blieben stehen.
+
+   **783.912 Schlüssel über sieben Märkte, 0 Fehler.** Gegenprobe an 20 zufälligen
+   Artikeln über alle Märkte: 232 eigene Einträge unter dem neuen Schlüssel, **0** unter
+   dem alten, 9.943 fremde Einträge unangetastet. Die Rücklese-Prüfung danach:
+   175 von 175 vorhanden.
 
 ---
 
@@ -366,18 +374,15 @@ entscheidet.
 
 ## 7. Offene Punkte
 
-1. **Altlast unter dem alten Schlüssel räumen** (Abschnitt 5.2) — rund 327.000 Schlüssel
-   in AT, PL und SK. Braucht eine ausdrückliche Freigabe, weil im Produktivsystem
-   gelöscht wird; das Skript liegt bereit und zählt ohne `--wirklich` nur.
-2. **Zeitpunkt des DiVA-Preisimports je Markt** — der Produktionslauf liegt seit dem
+1. **Zeitpunkt des DiVA-Preisimports je Markt** — der Produktionslauf liegt seit dem
    19.08.2026 um 07:30. Bestätigt ist der Importzeitpunkt weiterhin nicht.
-3. **Längste geplante Aktionsdauer**, damit `permanent_after_days` sicher darüberliegt.
-4. **`prev_price_max_days` von Legal kalibrieren** (Vorgabe 42 Tage).
-5. **Soll `PREV_*` jemals leer sein?** Entscheidet, ob der Tracker die Leerung schreibt
+2. **Längste geplante Aktionsdauer**, damit `permanent_after_days` sicher darüberliegt.
+3. **`prev_price_max_days` von Legal kalibrieren** (Vorgabe 42 Tage).
+4. **Soll `PREV_*` jemals leer sein?** Entscheidet, ob der Tracker die Leerung schreibt
    oder das Frontend über die Anzeige entscheidet.
-6. `alert_email` und Shop-Kennungen je Markt.
-7. **Verzeichnisschutz für `status/`** im ISPConfig-Panel (beide Umgebungen).
-8. **CH-Freigabe** durch Legal.
+5. `alert_email` und Shop-Kennungen je Markt.
+6. **Verzeichnisschutz für `status/`** im ISPConfig-Panel (beide Umgebungen).
+7. **CH-Freigabe** durch Legal.
 
 ---
 
@@ -385,6 +390,7 @@ entscheidet.
 
 | Datum | Was |
 |---|---|
+| 19.08.2026 | Altlast unter dem alten Schlüssel geräumt — 783.912 Schlüssel, 0 Fehler, fremde Einträge unberührt |
 | 19.08.2026 | **Schreibschlüssel um `provider=preisschreiber` ergänzt** — der ERP-Import räumte die Werte sonst wieder weg (DE, FR, SE, DK waren komplett verschwunden); voller Neuschreiblauf, Rücklese-Prüfung `bin/nachlese.php` (Abschnitt 5.2) |
 | 19.08.2026 | Laufprotokoll als CSV herunterladbar — alle verworfenen Datensätze und Fehler statt zehn in einer Notizspalte |
 | 19.08.2026 | Produktionslauf auf 07:30 umgestellt (Angabe GRUBE) |
