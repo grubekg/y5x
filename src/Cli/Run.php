@@ -100,6 +100,7 @@ final class Run
 
         $fehlerarten = [];
         $anomalien = [];
+        $fehler = [];
         $zaehler = ['gelesen' => 0, 'ohne_preis' => 0, 'anomalien' => 0,
                     'neu' => 0, 'geaendert' => 0, 'unveraendert' => 0,
                     'in_aktion' => 0, 'fenster_voll' => 0, 'fehler' => 0,
@@ -246,6 +247,13 @@ final class Run
                 $zaehler['fehler']++;
                 $art = \get_class($e) . ': ' . $e->getMessage();
                 $fehlerarten[$art] = ($fehlerarten[$art] ?? 0) + 1;
+                // Zusaetzlich einzeln, mit Artikelnummer — die Zusammenfassung nach Art
+                // beantwortet "was ging schief", nicht "bei welchem Artikel". Gedeckelt,
+                // damit ein Totalausfall nicht 285.000 Zeilen schreibt; der Deckel wird
+                // sichtbar vermerkt, statt still zu schneiden.
+                if (\count($fehler) < self::BEFUNDE_MAX) {
+                    $fehler[] = ['sku' => $sku, 'detail' => $art, 'net' => null, 'gross' => null];
+                }
                 continue;
             }
             if ($abruf) { $zaehler['gelesen']++; }
@@ -261,7 +269,8 @@ final class Run
                 // nachvollziehbar bleiben, WELCHER Artikel und WARUM — eine blosse Zahl
                 // "1 Anomalie" laesst sich spaeter niemandem erklaeren.
                 $zaehler['anomalien']++;
-                $anomalien[] = \sprintf('%s (%s: netto %s / brutto %s)', $sku, $grund, $net, $gross);
+                $anomalien[] = ['sku' => $sku, 'detail' => $grund,
+                                'net' => (string) $net, 'gross' => (string) $gross];
                 $net = $gross = null;
             }
             if ($abruf && ($net === null || $gross === null)) {
@@ -306,9 +315,11 @@ final class Run
         $zaehler['write_fehler'] += $fehl;
 
         \arsort($fehlerarten);
+        $this->befundeSchreiben($lauf, $markt, $heute, $anomalien, $fehler);
         $this->laufBeenden($lauf, $zaehler, $fehlerarten, $anomalien, $schreibmodus);
         foreach (\array_slice($anomalien, 0, 5) as $a) {
-            $this->melden('  VERWORFEN  ' . $a, true);
+            $this->melden(\sprintf('  VERWORFEN  %s (%s: netto %s / brutto %s)',
+                $a['sku'], $a['detail'], $a['net'], $a['gross']), true);
         }
         foreach (\array_slice($fehlerarten, 0, 3, true) as $art => $n) {
             $this->melden(\sprintf('  FEHLER %5dx  %s', $n, \mb_substr((string) $art, 0, 170)), true);
@@ -628,6 +639,54 @@ final class Run
         return (int) $this->db->pdo()->lastInsertId();
     }
 
+    /**
+     * Deckel fuer die Einzelbefunde eines Laufs und Marktes.
+     *
+     * Faellt der Shop komplett aus, sind alle 35.656 Artikel ein Fehler — und alle
+     * tragen dieselbe Meldung. Die Zusammenfassung nach Fehlerart sagt das in einer
+     * Zeile; 35.656 gleichlautende Zeilen sagen nichts mehr dazu. Der Deckel wird
+     * vermerkt, nicht verschwiegen.
+     */
+    private const BEFUNDE_MAX = 2000;
+
+    /**
+     * Verworfene Datensaetze und Fehler des Laufs vollstaendig ablegen.
+     *
+     * @param array<int,array{sku:?string,detail:string,net:?string,gross:?string}> $anomalien
+     * @param array<int,array{sku:?string,detail:string,net:?string,gross:?string}> $fehler
+     */
+    private function befundeSchreiben(int $lauf, string $markt, \DateTimeImmutable $heute,
+                                      array $anomalien, array $fehler): void
+    {
+        $zeilen = [];
+        foreach ($anomalien as $a) { $zeilen[] = ['anomalie', $a]; }
+        foreach ($fehler as $f)    { $zeilen[] = ['fehler', $f]; }
+        if (\count($anomalien) >= self::BEFUNDE_MAX) {
+            $zeilen[] = ['anomalie', ['sku' => null, 'net' => null, 'gross' => null,
+                'detail' => \sprintf('Liste bei %d Eintraegen gekappt — es gab mehr',
+                    self::BEFUNDE_MAX)]];
+        }
+        if (\count($fehler) >= self::BEFUNDE_MAX) {
+            $zeilen[] = ['fehler', ['sku' => null, 'net' => null, 'gross' => null,
+                'detail' => \sprintf('Liste bei %d Eintraegen gekappt — es gab mehr',
+                    self::BEFUNDE_MAX)]];
+        }
+        foreach (\array_chunk($zeilen, 200) as $block) {
+            $werte = [];
+            $args = [];
+            foreach ($block as [$art, $b]) {
+                $werte[] = '(?,?,?,?,?,?,?,?)';
+                \array_push($args, $lauf, $heute->format('Y-m-d'), $markt, $art,
+                    $b['sku'], \mb_substr((string) $b['detail'], 0, 512),
+                    $b['net'] !== null && $b['net'] !== '' ? $b['net'] : null,
+                    $b['gross'] !== null && $b['gross'] !== '' ? $b['gross'] : null);
+            }
+            $this->db->execute(
+                'INSERT INTO {p}run_issue (run_id, run_date, market, kind, sku, detail, net, gross)
+                 VALUES ' . \implode(',', $werte), $args);
+        }
+    }
+
     private function laufBeenden(int $id, array $z, array $fehlerarten = [],
                                 array $anomalien = [], string $schreibmodus = 'unbekannt'): void
     {
@@ -652,9 +711,12 @@ final class Run
         if ($schreibfehler > 0) {
             $notiz .= \sprintf(' | %d Schreibfehler', $schreibfehler);
         }
+        // Die Notiz fasst nur noch zusammen. Vorher standen hier zehn Anomalien im
+        // Klartext, von denen die Statusseite 120 Zeichen zeigte — die eine Zeile, die
+        // man im Zweifel braucht, war zuverlaessig abgeschnitten. Vollstaendig steht
+        // jeder Befund jetzt in `run_issue` und laesst sich als CSV herunterladen.
         if ($anomalien !== []) {
-            $notiz .= ' | verworfen: ' . \implode('; ', \array_slice($anomalien, 0, 10))
-                . (\count($anomalien) > 10 ? \sprintf(' … (+%d weitere)', \count($anomalien) - 10) : '');
+            $notiz .= \sprintf(' | %d verworfen (Laufprotokoll herunterladen)', \count($anomalien));
         }
         foreach (\array_slice($fehlerarten, 0, 3, true) as $art => $n) {
             $notiz .= \sprintf(' | %dx %s', $n, \mb_substr((string) $art, 0, 120));

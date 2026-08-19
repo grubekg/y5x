@@ -426,6 +426,19 @@ pruefe('laufBeenden nimmt den Schreibmodus des Laufs entgegen',
 pruefe('der Schreibmodus wird in die Zeile geschrieben',
     str_contains($quelle, 'write_mode = ?') && str_contains($quelle, 'write_errors = ?'));
 
+// Die Notiz fasst zusammen, die Liste gehoert in eine Datei: Zehn Anomalien im Klartext
+// plus "… (+31 weitere)" ergaben auf der Statusseite 120 sichtbare Zeichen — die eine
+// Zeile, die man im Zweifel braucht, war zuverlaessig abgeschnitten.
+pruefe('die Notiz traegt die Anomalienliste nicht mehr im Klartext',
+    !str_contains($quelle, "' | verworfen: '"));
+pruefe('jeder Befund wird einzeln abgelegt',
+    str_contains($quelle, '{p}run_issue'));
+pruefe('auch Fehler bekommen ihre Artikelnummer',
+    str_contains($quelle, "\$fehler[] = ['sku' => \$sku"));
+pruefe('der Deckel fuer Einzelbefunde steht als Konstante',
+    (new ReflectionClassConstant(\Grube\Price30\Cli\Run::class, 'BEFUNDE_MAX'))
+        ->getValue() > 0);
+
 echo "\n" . (empty($FAILS)
     ? "ALLE SZENARIEN BESTANDEN"
     : count($FAILS) . ' FEHLGESCHLAGEN: ' . implode(', ', $FAILS)) . "\n";

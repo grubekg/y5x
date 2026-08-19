@@ -626,6 +626,23 @@ Die Filter (`alle` · `in Aktion` · `ohne Aktion` · `Risiko` · `Fenster unvol
 sind Einschränkungen einer vollständigen Liste, keine Vorauswahl; dazu Suche nach
 Artikelnummer und Blätterung zu 100 Zeilen.
 
+### Das Laufprotokoll gehört in eine Datei, nicht in eine Tabellenzelle
+
+Die Notiz im `run_log` trug bis zum 19.08.2026 die ersten zehn Anomalien im Klartext und
+schnitt den Rest mit „… (+31 weitere)" ab; auf der Statusseite blieben davon 120 Zeichen.
+Damit fehlte zuverlässig genau die Zeile, die man im Zweifel braucht — welcher Artikel
+wurde warum verworfen.
+
+Jeder Befund steht deshalb einzeln in `run_issue` (Lauf, Tag, Markt, Art, Artikelnummer,
+Grund, Netto, Brutto) und lässt sich als CSV herunterladen: `lauf-log.php?lauf=<id>` für
+einen Lauf, `?tag=YYYY-MM-DD` für alle Märkte eines Tages. Semikolon und BOM, weil die
+Datei in Excel geöffnet wird. Die Notiz fasst seitdem nur noch zusammen.
+
+Fehler werden zusätzlich **einzeln mit Artikelnummer** festgehalten, nicht nur nach Art
+gezählt: Die Zählung beantwortet „was ging schief", nicht „bei welchem Artikel". Gedeckelt
+bei 2.000 je Lauf und Markt — ein Totalausfall soll keine 285.000 gleichlautenden Zeilen
+schreiben —, und der Deckel wird als eigene Zeile vermerkt statt still zu schneiden.
+
 ### Die Nachweisseite ist das Herzstück
 
 Signatur ist der **Messschrieb**: Treppenkurve, Fenster als schattiertes Band, Referenz
@@ -856,7 +873,43 @@ php bin/init-db.php --env staging            # Schema anlegen
 php bin/migrate.php --env staging            # Spalten in bestehenden Tabellen nachziehen
 php tests/run.php                            # 47 Szenarien, ohne Netz/DB/Composer
 php bin/demo-seed.php [--loeschen]           # Beispieldaten (nur staging)
+php bin/nachlese.php --stichprobe 50         # steht im PSS noch, was wir geschrieben haben?
 ```
+
+## Geschrieben heißt nicht gespeichert — der wichtigste offene Befund (19.08.2026)
+
+**Der PSS quittiert Schreibsätze, behält sie aber nicht.** Am 19.08.2026 gingen 391.968
+Sätze mit HTTP 204 hinaus; eine halbe Stunde später war für **DE, FR, SE und DK kein
+einziger davon mehr auffindbar**, für **AT, PL und SK** standen alle da. Stichprobe von
+25 Artikeln je Markt, `bin/nachlese.php`:
+
+| | DE | AT | FR | PL | SK | SE | DK |
+|---|---|---|---|---|---|---|---|
+| vorhanden | 0 | 25 | 0 | 25 | 25 | 0 | 0 |
+| fehlt | 25 | 0 | 25 | 0 | 0 | 25 | 25 |
+
+**Am Schreibweg liegt es nicht** — das wurde geprüft, nicht vermutet: Ein sofort
+wiederholter `PATCH` für dieselben Artikel und dieselben Märkte landete, war unmittelbar
+danach lesbar und stand zehn Minuten später unverändert da. Form, MCS, `customerGroup`
+und Felder sind identisch mit denen der Märkte, die bleiben.
+
+Die Werte werden also **nach dem Schreiben von außen entfernt**. Die naheliegende Spur ist
+ein Preisimport, der den Bestand eines Landes ersetzt statt ergänzt: Die drei
+überlebenden Märkte sind genau die, deren Preiseinträge seit Monaten unverändert sind
+(AT 09/2025, PL 03/2025, SK 2020), während DE und FR frisch importierte Einträge tragen.
+Bestätigt ist das nicht — **nicht raten, den Importzeitpunkt je Markt erfragen.**
+
+**Warum das die gefährlichste Lage überhaupt ist:** Jede Anzeige meldet Erfolg, und im
+Shop steht nichts. Eine Erfolgsquittung beweist, dass der Aufruf angenommen wurde — nicht
+dass der Wert bleibt. Deshalb gibt es die Rücklese-Prüfung:
+
+```
+php bin/nachlese.php [--stichprobe 50] [--market DE] [--csv befunde.csv]
+```
+
+Sie fragt **mit Abstand zum Schreiben** nach (genau dazwischen geht der Wert verloren),
+zieht eine Zufallsstichprobe je Markt — nicht die ersten N, sonst bliebe ein Teilverlust
+dauerhaft unsichtbar — und liefert Rückgabewert 1, wenn etwas fehlt.
 
 ## Betrieb
 
@@ -868,6 +921,15 @@ php bin/demo-seed.php [--loeschen]           # Beispieldaten (nur staging)
 * **`--write` steht im Trigger, nicht in der `app.yml`.** Der Auslieferungszustand der
   Konfiguration bleibt der Trockenmodus, damit ein von Hand gestarteter Lauf nichts
   überträgt. Scharf ist genau ein sichtbarer Weg.
+* **Deshalb sagt `dry_run` nichts darüber, ob ein Lauf geschrieben hat.** Der Modus steht
+  seit dem 19.08.2026 je Lauf in `run_log.write_mode`
+  (`unbekannt|scharf|trocken|gesperrt`), dazu `write_errors`. Vorher las die Statusseite
+  `dry_run` aus der Datei und meldete „Trockenmodus, 0 Schreibsätze", während 391.968
+  Sätze im PSS standen; `laufBeenden()` schrieb `pss_writes` fest auf 0. Beides behoben,
+  vier Tests halten es fest. **Wer den Schreibzustand wissen will, liest die Laufzeile.**
+* **Zeiten:** Staging 20:30, **Produktion 07:30** (Angabe GRUBE, 19.08.2026 — bewusst
+  morgens). Ursprünglich war 21:30 geplant, damit der Lauf nach dem Preisimport liegt;
+  ob das um 07:30 noch gilt, ist offen und hängt am Befund oben.
 * **Der Token liegt außerhalb des Docroots** (`<laufzeit>/trigger.token`, 600) und wird
   mit `hash_equals` geprüft — ein Vergleich, der beim ersten Unterschied abbricht, verrät
   über die Antwortzeit, wie viele Zeichen stimmten.

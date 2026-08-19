@@ -44,12 +44,18 @@ requests_per_minute: 330
 max_write_retries: 3
 
 alert_email: TODO
-# Angelegt im ISPConfig-Panel als Aufruf von trigger.php (Angabe GRUBE, 18.08.2026):
+# Angelegt im ISPConfig-Panel als Aufruf von trigger.php:
 #   20:30  Integration/Staging
-#   21:30  Produktion
-# Abends statt morgens, damit der Lauf nach dem taeglichen Preisimport liegt. Die
-# beiden Umgebungen laufen versetzt, damit sie sich nicht ueberschneiden.
-run_after: "21:30"              # Produktion; Staging 20:30
+#   07:30  Produktion (Angabe GRUBE, 19.08.2026 — bewusst auf morgens gesetzt)
+#
+# Urspruenglich war 21:30 vorgesehen, damit der Lauf NACH dem taeglichen Preisimport
+# liegt. Produktiv laeuft er jetzt morgens um 07:30. Ob der Import da schon durch ist,
+# ist offen — und es ist keine Kleinigkeit: Am 19.08.2026 waren die um 07:38 bis 07:47
+# geschriebenen Referenzwerte fuer DE, FR, SE und DK eine halbe Stunde spaeter
+# vollstaendig wieder verschwunden (AT, PL und SK standen unveraendert da). Ein sofort
+# wiederholter Schreibsatz landete und blieb lesbar — der Schreibweg ist in Ordnung,
+# die Werte werden von aussen wieder entfernt. `bin/nachlese.php` misst das.
+run_after: "07:30"              # Produktion; Staging 20:30
 
 # true = rechnen und protokollieren, aber NICHT in den PSS schreiben.
 # Auslieferungszustand ist der Trockenmodus: Scharfschalten ist eine bewusste Handlung.

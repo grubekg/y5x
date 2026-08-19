@@ -190,10 +190,11 @@ seitenkopf('Übersicht', 'index');
     <span class="def">Artikel × Märkte mit täglicher Preiserfassung</span>
   </div>
   <div>
-    <span class="label">Mit Referenz im PSS</span>
+    <span class="label">Referenz übertragen</span>
     <b><?= zahl($summe('geschrieben')) ?></b>
-    <span class="def">Schreibziel 30_NET / 30_GROSS<?= $trocken
-      ? ' — der letzte Lauf hat nichts übertragen' : '' ?></span>
+    <span class="def">30_NET / 30_GROSS quittiert vom PSS<?= $trocken
+      ? ' — der letzte Lauf hat nichts übertragen' : '' ?>. <b>Quittiert heißt nicht
+      gespeichert</b> — nachprüfen mit <code>bin/nachlese.php</code>.</span>
   </div>
 </div>
 
@@ -285,13 +286,21 @@ seitenkopf('Übersicht', 'index');
 </dl>
 
 <h2>Letzte Läufe</h2>
+<p class="fussnote" style="margin:0 0 .6rem">Die Notiz fasst zusammen. Die vollständige
+Liste der verworfenen Datensätze und Fehler — Artikelnummer, Grund, Netto und Brutto —
+steht als <b>Laufprotokoll</b> zum Herunterladen: je Lauf über die Spalte rechts, für
+einen ganzen Tag über
+<a href="lauf-log.php?tag=<?= h(\date('Y-m-d')) ?>">heute</a> ·
+<a href="lauf-log.php?tag=<?= h(\date('Y-m-d', \strtotime('-1 day'))) ?>">gestern</a>.</p>
 <div class="tabelle">
 <table>
 <thead><tr><th>Zeitpunkt</th><th>Markt</th><th>Status</th><th class="zahl">gelesen</th>
   <th class="zahl">Änderungen</th><th class="zahl">Schreibsätze</th>
-  <th class="zahl">Anomalien</th><th>Dauer</th><th>Notiz</th></tr></thead>
+  <th class="zahl">Anomalien</th><th>Dauer</th><th>Notiz</th><th>Protokoll</th></tr></thead>
 <tbody>
-<?php foreach (db()->query('SELECT * FROM {p}run_log ORDER BY id DESC LIMIT 15') as $r):
+<?php foreach (db()->query(
+    'SELECT r.*, (SELECT COUNT(*) FROM {p}run_issue i WHERE i.run_id = r.id) AS befunde
+       FROM {p}run_log r ORDER BY r.id DESC LIMIT 15') as $r):
     $klasse = match ($r['status']) {
         'ok' => 'ok', 'partial' => 'warn', 'laeuft' => 'laeuft', default => 'vorfall' };
     $wort = match ($r['status']) {
@@ -318,7 +327,11 @@ seitenkopf('Übersicht', 'index');
       } ?></td>
   <td class="zahl"><?= zahl((int) $r['anomalies']) ?></td>
   <td class="mono"><?= h($dauer) ?></td>
-  <td><?= h(\mb_substr((string) $r['note'], 0, 120)) ?></td>
+  <td><?= h((string) $r['note']) ?></td>
+  <td><?= (int) $r['befunde'] > 0
+        ? '<a href="lauf-log.php?lauf=' . (int) $r['id'] . '">CSV ('
+          . zahl((int) $r['befunde']) . ')</a>'
+        : '<span class="sub">—</span>' ?></td>
 </tr>
 <?php endforeach; ?>
 </tbody>

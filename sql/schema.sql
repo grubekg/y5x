@@ -81,6 +81,24 @@ CREATE TABLE IF NOT EXISTS {{P}}run_log (
   KEY idx_tag (run_date, market)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Verworfene Datensaetze und Fehler eines Laufs — vollstaendig, einer je Zeile.
+-- Die Notiz im run_log fasst nur zusammen und schneidet nach zehn Eintraegen ab; die
+-- Zeile, die man im Zweifel braucht, ist genau die, die dort fehlt. Herunterzuladen
+-- ueber die Statusseite (lauf-log.php).
+CREATE TABLE IF NOT EXISTS {{P}}run_issue (
+  id        BIGINT AUTO_INCREMENT PRIMARY KEY,
+  run_id    INT NOT NULL,
+  run_date  DATE NOT NULL,
+  market    CHAR(2) NOT NULL,
+  kind      ENUM('anomalie','fehler') NOT NULL,
+  sku       VARCHAR(64) NULL,
+  detail    VARCHAR(512) NOT NULL,
+  net       VARCHAR(32) NULL,
+  gross     VARCHAR(32) NULL,
+  KEY idx_lauf (run_id),
+  KEY idx_tag (run_date, market)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- Jede Aenderung am PSS-Eintrag, mit altem UND neuem Wert. Grundlage fuer `rollback`
 -- und fuer die Frage "was stand an Tag X im Shop". Aufbewahrung 13 Monate.
 CREATE TABLE IF NOT EXISTS {{P}}pss_write_log (
