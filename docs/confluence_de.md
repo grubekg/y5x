@@ -1,4 +1,4 @@
-# Preisschreiber — 30-Tage-Bestpreis nach § 11 PAngV
+# y5x — Preisschreiber
 
 **Kürzel:** `y5x` · **Stand:** 18.08.2026 · **Betrieb:** grube.tools
 
